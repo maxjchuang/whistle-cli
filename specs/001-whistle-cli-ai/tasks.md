@@ -22,12 +22,12 @@
 
 **Purpose**: Initialize the TypeScript CLI project and create the baseline repository layout.
 
-- [ ] T001 Initialize the Node.js package manifest with CLI entrypoints and scripts in package.json
-- [ ] T002 Create TypeScript compiler and runtime configuration in tsconfig.json
-- [ ] T003 [P] Add `.gitignore` entries for Node, build, local state, and fixture artifacts in .gitignore
-- [ ] T004 [P] Add repository-level tool configuration for formatting and linting in .prettierrc.json and eslint.config.js
-- [ ] T005 Create the planned source and test directory skeleton with placeholder indexes in src/cli/index.ts, src/shortcuts/index.ts, src/resources/index.ts, src/backends/raw/index.ts, src/backends/storage/index.ts, src/backends/runtime/index.ts, src/domain/index.ts, src/doctor/index.ts, src/output/index.ts, src/shared/index.ts, tests/unit/.gitkeep, tests/contract/.gitkeep, and tests/integration/.gitkeep
-- [ ] T006 Install and record baseline runtime and development dependencies in package.json and package-lock.json
+- [x] T001 Initialize the Node.js package manifest with CLI entrypoints and scripts in package.json
+- [x] T002 Create TypeScript compiler and runtime configuration in tsconfig.json
+- [x] T003 [P] Add `.gitignore` entries for Node, build, local state, and fixture artifacts in .gitignore
+- [x] T004 [P] Add repository-level tool configuration for formatting and linting in .prettierrc.json and eslint.config.js
+- [x] T005 Create the planned source and test directory skeleton with placeholder indexes in src/cli/index.ts, src/shortcuts/index.ts, src/resources/index.ts, src/backends/raw/index.ts, src/backends/storage/index.ts, src/backends/runtime/index.ts, src/domain/index.ts, src/doctor/index.ts, src/output/index.ts, src/shared/index.ts, tests/unit/.gitkeep, tests/contract/.gitkeep, and tests/integration/.gitkeep
+- [x] T006 Install and record baseline runtime and development dependencies in package.json and package-lock.json
 
 ---
 
@@ -37,21 +37,21 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T007 Implement environment and repository configuration loading in src/shared/config.ts
-- [ ] T008 [P] Implement current-instance resolution and selection primitives in src/shared/instance-context.ts
-- [ ] T009 [P] Implement canonical JSON result envelopes and shared response helpers in src/output/result.ts
-- [ ] T010 [P] Implement stable typed error codes and error serialization in src/output/errors.ts
-- [ ] T011 Implement human-readable and machine-readable output rendering in src/output/renderers.ts
-- [ ] T012 [P] Implement local whistle-cli metadata persistence for action logs, previews, and flow checkpoints in src/backends/storage/state-store.ts
-- [ ] T013 [P] Implement the low-level subprocess runner for raw `w2` execution in src/backends/raw/process-runner.ts
+- [x] T007 Implement environment and repository configuration loading in src/shared/config.ts
+- [x] T008 [P] Implement current-instance resolution and selection primitives in src/shared/instance-context.ts
+- [x] T009 [P] Implement canonical JSON result envelopes and shared response helpers in src/output/result.ts
+- [x] T010 [P] Implement stable typed error codes and error serialization in src/output/errors.ts
+- [x] T011 Implement human-readable and machine-readable output rendering in src/output/renderers.ts
+- [x] T012 [P] Implement local whistle-cli metadata persistence for action logs, previews, and flow checkpoints in src/backends/storage/state-store.ts
+- [x] T013 [P] Implement the low-level subprocess runner for raw `w2` execution in src/backends/raw/process-runner.ts
 - [ ] T014 Implement the high-level `w2` adapter for lifecycle, proxy, CA, and plugin operations in src/backends/raw/w2-client.ts
 - [ ] T015 [P] Implement persisted Whistle storage discovery and read/write helpers in src/backends/storage/whistle-storage.ts
-- [ ] T016 [P] Implement runtime client scaffolding for captures and replay-oriented operations in src/backends/runtime/runtime-client.ts
+- [x] T016 [P] Implement runtime client scaffolding for captures and replay-oriented operations in src/backends/runtime/runtime-client.ts
 - [ ] T017 Implement preview/apply/verify orchestration and rollback hooks in src/domain/action-executor.ts
-- [ ] T018 Implement interactive flow state handling for blocked and user-assisted operations in src/domain/flow-runner.ts
-- [ ] T019 Implement the root CLI program, global flags, and resource registration in src/cli/program.ts
-- [ ] T020 Implement the `raw w2 ...` command surface and CLI registration in src/resources/raw.ts and src/cli/program.ts
-- [ ] T021 Configure the baseline verification toolchain and test runner scripts in vitest.config.ts
+- [x] T018 Implement interactive flow state handling for blocked and user-assisted operations in src/domain/flow-runner.ts
+- [x] T019 Implement the root CLI program, global flags, and resource registration in src/cli/program.ts
+- [x] T020 Implement the `raw w2 ...` command surface and CLI registration in src/resources/raw.ts and src/cli/program.ts
+- [x] T021 Configure the baseline verification toolchain and test runner scripts in vitest.config.ts
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 

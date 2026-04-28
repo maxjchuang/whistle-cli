@@ -1,0 +1,18 @@
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.env*
+
+# Local tool state
+.whistle-cli/
+
+# Editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
