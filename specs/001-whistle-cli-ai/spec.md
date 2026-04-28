@@ -66,11 +66,11 @@ As a developer or QA engineer, I can ask `whistle-cli` to find captured traffic,
 
 ---
 
-### User Story 4 - Manage Plugins And Advanced Extensions (Priority: P3)
+### User Story 4 - Manage Plugin Lifecycle (Priority: P3)
 
-As a power user or platform engineer, I can manage Whistle plugins and plugin-backed capabilities through `whistle-cli` so that advanced workflows such as custom rule generation, plugin configuration, plugin command execution, and plugin-assisted debugging are available from the same AI interface.
+As a power user or platform engineer, I can manage Whistle plugins through `whistle-cli` so that installation, lifecycle control, and metadata inspection are available from the same AI interface without relying on raw plugin tooling.
 
-**Why this priority**: Plugin support is necessary to claim broad Whistle coverage, but it depends on the core lifecycle and rule workflows already being stable.
+**Why this priority**: Plugin lifecycle coverage is necessary to claim broad Whistle coverage, but it depends on the core lifecycle and rule workflows already being stable.
 
 **Independent Test**: Can be fully tested by installing, enabling, disabling, inspecting, updating, and uninstalling a plugin through natural-language commands, while preserving the user’s existing Whistle environment.
 
