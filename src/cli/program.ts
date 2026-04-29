@@ -1,5 +1,10 @@
 import { Command } from 'commander';
 import { registerRawResource } from '../resources/raw';
+import { registerInstanceResource } from '../resources/instance';
+import { registerCertsResource } from '../resources/certs';
+import { registerProxyResource } from '../resources/proxy';
+import { registerDoctorResource } from '../resources/doctor';
+import { registerBootstrapShortcuts } from '../shortcuts/bootstrap';
 
 export type OutputFormat = 'json' | 'pretty' | 'table' | 'ndjson';
 
@@ -22,8 +27,12 @@ export function buildProgram(): Command {
 
   registerRawResource(program);
 
-  // Future resources will be registered here (instance/rules/mocks/captures/certs/proxy/plugins/doctor)
+  registerInstanceResource(program);
+  registerCertsResource(program);
+  registerProxyResource(program);
+  registerDoctorResource(program);
+
+  registerBootstrapShortcuts(program);
 
   return program;
 }
-

@@ -10,9 +10,11 @@ export interface ActionLogRecord {
   resource: string;
   action: string;
   created_at: string;
+  instance_id?: string;
   preview?: unknown;
   apply_result?: unknown;
   verify_result?: unknown;
+  rollback?: unknown;
 }
 
 export class StateStore {
@@ -43,6 +45,27 @@ export class StateStore {
   async appendActionLog(record: ActionLogRecord): Promise<void> {
     await fs.mkdir(path.dirname(this.actionsFilePath), { recursive: true });
     await fs.appendFile(this.actionsFilePath, `${JSON.stringify(record)}\n`, 'utf8');
+  }
+
+  async findActionLog(actionId: string): Promise<ActionLogRecord | null> {
+    try {
+      const raw = await fs.readFile(this.actionsFilePath, 'utf8');
+      // Newest entries at the end. Scan backwards to find the latest matching record.
+      const lines = raw.split('\n');
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i]?.trim();
+        if (!line) continue;
+        try {
+          const parsed = JSON.parse(line) as ActionLogRecord;
+          if (parsed.action_id === actionId) return parsed;
+        } catch {
+          // Ignore malformed lines.
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   async readFlows(): Promise<Record<string, unknown>> {

@@ -9,6 +9,8 @@ export interface FlowState {
   status: FlowStatus;
   current_step?: string;
   instruction?: string;
+  completion_criteria?: string[];
+  auto_checks?: string[];
 }
 
 export class FlowRunner {
@@ -33,5 +35,20 @@ export class FlowRunner {
     const flows = await store.readFlows();
     flows[flow.flow_id] = flow;
     await store.writeFlows(flows);
+  }
+
+  async createWaitingForUser(input: {
+    current_step: string;
+    instruction: string;
+    completion_criteria?: string[];
+    auto_checks?: string[];
+  }): Promise<FlowState> {
+    return this.create({
+      status: 'waiting_for_user',
+      current_step: input.current_step,
+      instruction: input.instruction,
+      completion_criteria: input.completion_criteria,
+      auto_checks: input.auto_checks,
+    });
   }
 }

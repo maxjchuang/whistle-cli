@@ -44,10 +44,10 @@
 - [x] T011 Implement human-readable and machine-readable output rendering in src/output/renderers.ts
 - [x] T012 [P] Implement local whistle-cli metadata persistence for action logs, previews, and flow checkpoints in src/backends/storage/state-store.ts
 - [x] T013 [P] Implement the low-level subprocess runner for raw `w2` execution in src/backends/raw/process-runner.ts
-- [ ] T014 Implement the high-level `w2` adapter for lifecycle, proxy, CA, and plugin operations in src/backends/raw/w2-client.ts
-- [ ] T015 [P] Implement persisted Whistle storage discovery and read/write helpers in src/backends/storage/whistle-storage.ts
+- [x] T014 Implement the high-level `w2` adapter for lifecycle, proxy, CA, and plugin operations in src/backends/raw/w2-client.ts
+- [x] T015 [P] Implement persisted Whistle storage discovery and read/write helpers in src/backends/storage/whistle-storage.ts
 - [x] T016 [P] Implement runtime client scaffolding for captures and replay-oriented operations in src/backends/runtime/runtime-client.ts
-- [ ] T017 Implement preview/apply/verify orchestration and rollback hooks in src/domain/action-executor.ts
+- [x] T017 Implement preview/apply/verify orchestration and rollback hooks in src/domain/action-executor.ts
 - [x] T018 Implement interactive flow state handling for blocked and user-assisted operations in src/domain/flow-runner.ts
 - [x] T019 Implement the root CLI program, global flags, and resource registration in src/cli/program.ts
 - [x] T020 Implement the `raw w2 ...` command surface and CLI registration in src/resources/raw.ts and src/cli/program.ts
@@ -63,17 +63,17 @@
 
 **Independent Test**: A user can run instance, cert, proxy, and doctor commands against a local or headless Whistle setup, receive structured results, and successfully reach a working Whistle session through the resolved default instance.
 
-- [ ] T022 [P] [US1] Implement the Whistle instance domain model and lifecycle mapping in src/domain/instance-service.ts
-- [ ] T023 [P] [US1] Implement certificate state inspection and install-material resolution in src/domain/certificate-service.ts
-- [ ] T024 [P] [US1] Implement proxy state inspection and verification logic in src/domain/proxy-service.ts
-- [ ] T025 [US1] Implement resource commands for `instance start/stop/restart/status/list/select` in src/resources/instance.ts
-- [ ] T026 [US1] Implement resource commands for `certs status/install/verify/guide` in src/resources/certs.ts
-- [ ] T027 [US1] Implement resource commands for `proxy status/set/off/verify` in src/resources/proxy.ts
-- [ ] T028 [US1] Implement doctor flows for `instance-status`, `proxy-routing`, and `https-capture` in src/doctor/system-doctor.ts
-- [ ] T029 [US1] Implement the `doctor` command surface and blocked-flow serialization in src/resources/doctor.ts
-- [ ] T030 [US1] Implement local permission detection and remediation hints for cert/proxy mutations in src/doctor/permission-checks.ts and src/domain/flow-runner.ts
-- [ ] T031 [US1] Implement high-frequency bootstrap shortcuts such as `cert install`, `doctor https`, and default-instance preparation in src/shortcuts/bootstrap.ts
-- [ ] T032 [US1] Add integration fixtures and command validation helpers for local-instance bootstrap scenarios in tests/integration/us1-bootstrap.fixtures.ts
+- [x] T022 [P] [US1] Implement the Whistle instance domain model and lifecycle mapping in src/domain/instance-service.ts
+- [x] T023 [P] [US1] Implement certificate state inspection and install-material resolution in src/domain/certificate-service.ts
+- [x] T024 [P] [US1] Implement proxy state inspection and verification logic in src/domain/proxy-service.ts
+- [x] T025 [US1] Implement resource commands for `instance start/stop/restart/status/list/select` in src/resources/instance.ts
+- [x] T026 [US1] Implement resource commands for `certs status/install/verify/guide` in src/resources/certs.ts
+- [x] T027 [US1] Implement resource commands for `proxy status/set/off/verify` in src/resources/proxy.ts
+- [x] T028 [US1] Implement doctor flows for `instance-status`, `proxy-routing`, and `https-capture` in src/doctor/system-doctor.ts
+- [x] T029 [US1] Implement the `doctor` command surface and blocked-flow serialization in src/resources/doctor.ts
+- [x] T030 [US1] Implement local permission detection and remediation hints for cert/proxy mutations in src/doctor/permission-checks.ts and src/domain/flow-runner.ts
+- [x] T031 [US1] Implement high-frequency bootstrap shortcuts such as `cert install`, `doctor https`, and default-instance preparation in src/shortcuts/bootstrap.ts
+- [x] T032 [US1] Add integration fixtures and command validation helpers for local-instance bootstrap scenarios in tests/integration/us1-bootstrap.fixtures.ts
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 

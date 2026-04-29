@@ -1,2 +1,1 @@
-export {};
-
+export { registerBootstrapShortcuts } from './bootstrap';
