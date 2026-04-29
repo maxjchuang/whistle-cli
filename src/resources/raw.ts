@@ -23,6 +23,18 @@ export function registerRawResource(program: Command): void {
       try {
         const res = await client.run(args ?? []);
 
+        if (res.commandNotFound) {
+          const err = new CliError({
+            code: 'UNSUPPORTED_OPERATION',
+            message: '`w2` command not found on PATH',
+            reason: `Tried to run: w2 ${args?.join(' ') || ''}`.trim(),
+            suggested_fix: 'Install whistle: `npm install -g whistle`',
+          });
+          process.stderr.write(renderEnvelope(errorEnvelope('raw', actionName, err), format));
+          process.exitCode = 1;
+          return;
+        }
+
         if (res.exitCode !== 0) {
           const err = new CliError({
             code: 'UNSUPPORTED_OPERATION',
