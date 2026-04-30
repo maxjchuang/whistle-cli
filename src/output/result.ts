@@ -8,6 +8,8 @@ export type ResourceName =
   | 'values'
   | 'mocks'
   | 'captures'
+  | 'composer'
+  | 'frames'
   | 'certs'
   | 'proxy'
   | 'plugins'

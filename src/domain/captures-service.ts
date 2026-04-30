@@ -33,7 +33,16 @@ export class CapturesService {
     return new RuntimeClient({ baseUrl });
   }
 
-  async find(query: CaptureQuery): Promise<{ filters: CaptureQuery['filters']; count: number; items: CaptureRecord[] }> {
+  async find(query: CaptureQuery): Promise<{
+    filters: CaptureQuery['filters'];
+    count: number;
+    items: CaptureRecord[];
+    analysis?: {
+      top_hosts: Array<{ host: string; count: number }>;
+      status_codes: Array<{ status_code: number; count: number }>;
+      protocols: Array<{ protocol: CaptureRecord['protocol']; count: number }>;
+    };
+  }> {
     const client = await this.runtimeClientForInstance(query.instance_id);
     const limit = normalizeLimit(query.limit);
     const res = await client.findCaptures({
@@ -56,7 +65,33 @@ export class CapturesService {
       };
     });
 
-    return { filters: query.filters, count: items.length, items };
+    const hostCount = new Map<string, number>();
+    const statusCount = new Map<number, number>();
+    const protoCount = new Map<CaptureRecord['protocol'], number>();
+    for (const it of items) {
+      const host = it.host?.trim();
+      if (host) hostCount.set(host, (hostCount.get(host) ?? 0) + 1);
+      if (typeof it.status_code === 'number') {
+        statusCount.set(it.status_code, (statusCount.get(it.status_code) ?? 0) + 1);
+      }
+      protoCount.set(it.protocol, (protoCount.get(it.protocol) ?? 0) + 1);
+    }
+
+    const analysis = {
+      top_hosts: [...hostCount.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([host, count]) => ({ host, count })),
+      status_codes: [...statusCount.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([status_code, count]) => ({ status_code, count })),
+      protocols: [...protoCount.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([protocol, count]) => ({ protocol, count })),
+    };
+
+    return { filters: query.filters, count: items.length, items, analysis };
   }
 
   async get(instanceId: string, captureId: string): Promise<CaptureRecord> {
@@ -74,5 +109,42 @@ export class CapturesService {
       status_code:
         typeof item.status_code === 'number' ? item.status_code : typeof item.statusCode === 'number' ? item.statusCode : undefined,
     };
+  }
+
+  async export(query: CaptureQuery & { export_format?: 'har' | 'json' }): Promise<Record<string, unknown>> {
+    const client = await this.runtimeClientForInstance(query.instance_id);
+    const limit = normalizeLimit(query.limit);
+    const res = await client.exportCaptures({
+      ...query.filters,
+      limit,
+      format: query.export_format,
+    });
+    return res as Record<string, unknown>;
+  }
+
+  async *tail(query: CaptureQuery): AsyncGenerator<CaptureRecord, void, unknown> {
+    const client = await this.runtimeClientForInstance(query.instance_id);
+    const limit = normalizeLimit(query.limit);
+    let seen = 0;
+    for await (const r of client.tailCaptures({ ...query.filters, limit })) {
+      const capture_id = String((r as any).capture_id ?? (r as any).id ?? (r as any).sessionId ?? (r as any).reqId ?? '');
+      yield {
+        capture_id: capture_id || `cap_${Math.random().toString(16).slice(2)}`,
+        instance_id: query.instance_id,
+        protocol: parseProtocol((r as any).protocol ?? (r as any).proto ?? (r as any).type),
+        method: (r as any).method ? String((r as any).method) : undefined,
+        url: (r as any).url ? String((r as any).url) : undefined,
+        host: (r as any).host ? String((r as any).host) : undefined,
+        path: (r as any).path ? String((r as any).path) : undefined,
+        status_code:
+          typeof (r as any).status_code === 'number'
+            ? (r as any).status_code
+            : typeof (r as any).statusCode === 'number'
+              ? (r as any).statusCode
+              : undefined,
+      };
+      seen++;
+      if (seen >= limit) break;
+    }
   }
 }

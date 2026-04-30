@@ -65,8 +65,13 @@ export function registerCapturesResource(program: Command): void {
   captures
     .command('tail')
     .description('Stream captures as ndjson (best-effort)')
+    .option('--host <host>', 'Filter by host')
+    .option('--path <path>', 'Filter by request path substring')
+    .option('--method <method>', 'Filter by HTTP method')
+    .option('--status <status>', 'Filter by status code')
+    .option('--keyword <keyword>', 'Search keyword')
     .option('--limit <n>', 'Max events before ending (for safety)', '20')
-    .action(async (cmdOpts: { limit?: string }) => {
+    .action(async (cmdOpts: any) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
       const resolved = await resolveInstanceId(opts.instance);
@@ -85,16 +90,39 @@ export function registerCapturesResource(program: Command): void {
       }
 
       const max = Number(cmdOpts.limit ?? 20);
+      const filters = {
+        host: cmdOpts.host ? String(cmdOpts.host) : undefined,
+        path: cmdOpts.path ? String(cmdOpts.path) : undefined,
+        method: cmdOpts.method ? String(cmdOpts.method) : undefined,
+        status: cmdOpts.status ? Number(cmdOpts.status) : undefined,
+        keyword: cmdOpts.keyword ? String(cmdOpts.keyword) : undefined,
+      };
+
+      let count = 0;
+      try {
+        for await (const item of service.tail({ instance_id: resolved.id, filters, limit: max })) {
+          const env = okEnvelope('captures', action, item, {
+            instance: resolved,
+            effective: true,
+            event: 'capture',
+          });
+          process.stdout.write(renderEnvelope(env, 'ndjson'));
+          count++;
+        }
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved, event: 'error' }), 'json'));
+        process.exitCode = 1;
+        return;
+      }
+
       const endEnvelope = okEnvelope(
         'captures',
         action,
-        { ended: true },
+        { ended: true, count },
         { instance: resolved, effective: true, event: 'end', meta: { verified: true } },
       );
-
-      // TODO (US3): real streaming backend. For now, emit `end` immediately.
       process.stdout.write(renderEnvelope(endEnvelope, 'ndjson'));
-      if (Number.isFinite(max) && max <= 0) return;
     });
 
   // Contract-required actions (stubs for now)
@@ -113,15 +141,36 @@ export function registerCapturesResource(program: Command): void {
 
   captures
     .command('export')
-    .description('Export captures (not implemented in v1 yet)')
-    .action(async () => {
+    .description('Export captures (best-effort)')
+    .option('--host <host>', 'Filter by host')
+    .option('--path <path>', 'Filter by request path substring')
+    .option('--method <method>', 'Filter by HTTP method')
+    .option('--status <status>', 'Filter by status code')
+    .option('--keyword <keyword>', 'Search keyword')
+    .option('--limit <n>', 'Max items', '200')
+    .option('--export-format <fmt>', 'Export format: har|json', 'json')
+    .action(async (cmdOpts: any) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'export';
-      const err = new CliError({ code: 'UNSUPPORTED_OPERATION', message: 'captures export not implemented yet' });
-      process.stderr.write(renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved }), format));
-      process.exitCode = 1;
+
+      try {
+        const filters = {
+          host: cmdOpts.host ? String(cmdOpts.host) : undefined,
+          path: cmdOpts.path ? String(cmdOpts.path) : undefined,
+          method: cmdOpts.method ? String(cmdOpts.method) : undefined,
+          status: cmdOpts.status ? Number(cmdOpts.status) : undefined,
+          keyword: cmdOpts.keyword ? String(cmdOpts.keyword) : undefined,
+        };
+        const limit = Number(cmdOpts.limit ?? 200);
+        const export_format = cmdOpts.exportFormat === 'har' ? 'har' : 'json';
+        const out = await service.export({ instance_id: resolved.id, filters, limit, export_format });
+        process.stdout.write(renderEnvelope(okEnvelope('captures', action, out, { instance: resolved, effective: true }), format));
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved }), format));
+        process.exitCode = 1;
+      }
     });
 }
-

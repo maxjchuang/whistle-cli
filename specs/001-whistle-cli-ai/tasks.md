@@ -105,17 +105,17 @@
 
 **Independent Test**: A user can find recent captures, inspect structured request/response evidence, replay an existing capture with modifications, and receive typed output for both batch and streaming capture views.
 
-- [ ] T042 [P] [US3] Implement capture query, capture record, and compose request models in src/domain/captures-model.ts
-- [ ] T043 [US3] Implement capture search, filtering, sorting, and summary analysis in src/domain/captures-service.ts
-- [ ] T044 [US3] Implement replay and compose execution planning over runtime and raw backends in src/domain/composer-service.ts
-- [ ] T045 [US3] Implement resource commands for `captures find/get/tail/diff/export` in src/resources/captures.ts
-- [ ] T046 [US3] Implement resource commands for replay and edited request composition in src/resources/composer.ts
-- [ ] T047 [US3] Implement capture-oriented shortcuts such as `capture find`, `capture find-error`, and replay patch helpers in src/shortcuts/captures.ts
-- [ ] T048 [US3] Extend the runtime client for NDJSON streaming, session detail loading, and capture export in src/backends/runtime/runtime-client.ts
-- [ ] T049 [US3] Implement WebSocket/TCP frame inspection and session-control services in src/domain/frames-service.ts
-- [ ] T050 [US3] Implement resource commands for frame listing and session send/receive control in src/resources/frames.ts
-- [ ] T051 [US3] Extend output rendering for capture analysis summaries, frame events, and streaming output in src/output/renderers.ts
-- [ ] T052 [US3] Add capture, replay, and WebSocket/TCP validation fixtures in tests/integration/us3-captures.fixtures.ts
+- [x] T042 [P] [US3] Implement capture query, capture record, and compose request models in src/domain/captures-model.ts
+- [x] T043 [US3] Implement capture search, filtering, sorting, and summary analysis in src/domain/captures-service.ts
+- [x] T044 [US3] Implement replay and compose execution planning over runtime and raw backends in src/domain/composer-service.ts
+- [x] T045 [US3] Implement resource commands for `captures find/get/tail/diff/export` in src/resources/captures.ts
+- [x] T046 [US3] Implement resource commands for replay and edited request composition in src/resources/composer.ts
+- [x] T047 [US3] Implement capture-oriented shortcuts such as `capture find`, `capture find-error`, and replay patch helpers in src/shortcuts/captures.ts
+- [x] T048 [US3] Extend the runtime client for NDJSON streaming, session detail loading, and capture export in src/backends/runtime/runtime-client.ts
+- [x] T049 [US3] Implement WebSocket/TCP frame inspection and session-control services in src/domain/frames-service.ts
+- [x] T050 [US3] Implement resource commands for frame listing and session send/receive control in src/resources/frames.ts
+- [x] T051 [US3] Extend output rendering for capture analysis summaries, frame events, and streaming output in src/output/renderers.ts
+- [x] T052 [US3] Add capture, replay, and WebSocket/TCP validation fixtures in tests/integration/us3-captures.fixtures.ts
 
 **Checkpoint**: At this point, User Stories 1, 2, and 3 should all be independently functional
 

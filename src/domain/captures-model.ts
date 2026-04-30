@@ -42,5 +42,9 @@ export interface ComposeRequest {
   url?: string;
   headers?: Record<string, string>;
   body?: string;
+  execution_mode?: 'preview' | 'send' | 'send_and_capture';
+  temporary_overrides?: {
+    rules_text?: string;
+    values?: Record<string, string>;
+  };
 }
-

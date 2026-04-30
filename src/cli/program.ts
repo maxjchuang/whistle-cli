@@ -7,8 +7,11 @@ import { registerDoctorResource } from '../resources/doctor';
 import { registerRulesResource } from '../resources/rules';
 import { registerValuesResource } from '../resources/values';
 import { registerCapturesResource } from '../resources/captures';
+import { registerComposerResource } from '../resources/composer';
+import { registerFramesResource } from '../resources/frames';
 import { registerBootstrapShortcuts } from '../shortcuts/bootstrap';
 import { registerRulesShortcuts } from '../shortcuts/rules';
+import { registerCapturesShortcuts } from '../shortcuts/captures';
 
 export type OutputFormat = 'json' | 'pretty' | 'table' | 'ndjson';
 
@@ -39,9 +42,12 @@ export function buildProgram(): Command {
   registerRulesResource(program);
   registerValuesResource(program);
   registerCapturesResource(program);
+  registerComposerResource(program);
+  registerFramesResource(program);
 
   registerBootstrapShortcuts(program);
   registerRulesShortcuts(program);
+  registerCapturesShortcuts(program);
 
   return program;
 }
