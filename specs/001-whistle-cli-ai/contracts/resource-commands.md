@@ -34,6 +34,7 @@ Supported top-level resources for v1:
 
 - `instance`
 - `rules`
+- `values`
 - `mocks`
 - `captures`
 - `certs`
@@ -77,6 +78,8 @@ All resource commands should support the following shared flags where relevant:
 - `--rollback <action-id>`: Revert a previously logged mutation when supported.
 - `--non-interactive`: Fail instead of waiting for user action.
 
+If `--rollback <action-id>` is provided for a supported resource, the command should execute rollback instead of its normal behavior.
+
 ## Resource Actions
 
 ### `instance`
@@ -99,6 +102,17 @@ All resource commands should support the following shared flags where relevant:
 - `disable`
 - `import`
 - `export`
+- `rollback`
+
+### `values`
+
+- `list`
+- `get`
+- `set`
+- `remove`
+- `import`
+- `export`
+- `rollback`
 
 ### `mocks`
 

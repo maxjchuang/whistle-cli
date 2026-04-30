@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import type { OutputFormat } from '../cli/program';
 import fs from 'node:fs/promises';
 import { resolveInstanceId } from '../shared/instance-context';
 import { CliError } from '../output/errors';
@@ -12,6 +13,38 @@ function resolvePavFlags(cmdOpts: { preview?: boolean; apply?: boolean; verify?:
   const verify = Boolean(cmdOpts.verify);
   const apply = Boolean(cmdOpts.apply) || verify || (!preview && !cmdOpts.apply && !cmdOpts.verify);
   return { preview, apply, verify };
+}
+
+async function runValuesRollback(
+  executor: ActionExecutor,
+  service: ValuesService,
+  resolved: { id: string; name: string },
+  actionId: string,
+  format: string,
+): Promise<void> {
+  const res = await executor.executeRollback(
+    { resource: 'values', action: 'rollback', instance: resolved },
+    actionId,
+    async (handle) => {
+      if (!handle || typeof handle !== 'object') {
+        throw new CliError({ code: 'UNSUPPORTED_OPERATION', message: 'Invalid rollback handle' });
+      }
+      const h = handle as any;
+      if (h.type === 'values.restore') {
+        const snapshot = h.snapshot as any;
+        return service.restore(snapshot, resolved.id);
+      }
+      throw new CliError({
+        code: 'UNSUPPORTED_OPERATION',
+        message: 'Unsupported rollback handle type',
+        reason: String(h.type ?? '<unknown>'),
+      });
+    },
+  );
+
+  process.stdout.write(
+    renderEnvelope(okEnvelope('values', 'rollback', res, { instance: resolved, effective: true }), format as OutputFormat),
+  );
 }
 
 export function registerValuesResource(program: Command): void {
@@ -30,27 +63,7 @@ export function registerValuesResource(program: Command): void {
       const action = 'rollback';
 
       try {
-        const res = await executor.executeRollback(
-          { resource: 'values', action, instance: resolved },
-          cmdOpts.actionId,
-          async (handle) => {
-            if (!handle || typeof handle !== 'object') {
-              throw new CliError({ code: 'UNSUPPORTED_OPERATION', message: 'Invalid rollback handle' });
-            }
-            const h = handle as any;
-            if (h.type === 'values.restore') {
-              const snapshot = h.snapshot as any;
-              return service.restore(snapshot, resolved.id);
-            }
-            throw new CliError({
-              code: 'UNSUPPORTED_OPERATION',
-              message: 'Unsupported rollback handle type',
-              reason: String(h.type ?? '<unknown>'),
-            });
-          },
-        );
-
-        process.stdout.write(renderEnvelope(okEnvelope('values', action, res, { instance: resolved, effective: true }), format));
+        await runValuesRollback(executor, service, resolved, cmdOpts.actionId, format);
       } catch (e) {
         const err = CliError.fromUnknown(e);
         process.stderr.write(renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format));
@@ -103,12 +116,24 @@ export function registerValuesResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
+    .option('--rollback <actionId>', 'Rollback a previous action instead of setting')
     .action(async (cmdOpts: { key: string; value: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'set';
       const pav = resolvePavFlags(cmdOpts);
+
+      if ((cmdOpts as any).rollback) {
+        try {
+          await runValuesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('values', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
       try {
         const result = await executor.execute(
           { resource: 'values', action, instance: resolved },
@@ -149,12 +174,24 @@ export function registerValuesResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
+    .option('--rollback <actionId>', 'Rollback a previous action instead of removing')
     .action(async (cmdOpts: { key: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'remove';
       const pav = resolvePavFlags(cmdOpts);
+
+      if ((cmdOpts as any).rollback) {
+        try {
+          await runValuesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('values', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
 
       try {
         const result = await executor.execute(
@@ -196,12 +233,24 @@ export function registerValuesResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
+    .option('--rollback <actionId>', 'Rollback a previous action instead of importing')
     .action(async (cmdOpts: { key: string; file: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'import';
       const pav = resolvePavFlags(cmdOpts);
+
+      if ((cmdOpts as any).rollback) {
+        try {
+          await runValuesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('values', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
 
       try {
         const fileContent = await fs.readFile(cmdOpts.file, 'utf8');
@@ -247,12 +296,24 @@ export function registerValuesResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Write the file')
     .option('--verify', 'Verify after write')
+    .option('--rollback <actionId>', 'Rollback a previous action instead of exporting')
     .action(async (cmdOpts: { key: string; out: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'export';
       const pav = resolvePavFlags(cmdOpts);
+
+      if ((cmdOpts as any).rollback) {
+        try {
+          await runValuesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('values', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
 
       try {
         const result = await executor.execute(

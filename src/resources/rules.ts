@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import type { OutputFormat } from '../cli/program';
 import { resolveInstanceId } from '../shared/instance-context';
 import { CliError } from '../output/errors';
 import { errorEnvelope, okEnvelope } from '../output/result';
@@ -12,6 +13,53 @@ function resolvePavFlags(cmdOpts: { preview?: boolean; apply?: boolean; verify?:
   const verify = Boolean(cmdOpts.verify);
   const apply = Boolean(cmdOpts.apply) || verify || (!preview && !cmdOpts.apply && !cmdOpts.verify);
   return { preview, apply, verify };
+}
+
+async function runRulesRollback(
+  executor: ActionExecutor,
+  service: RulesService,
+  resolved: { id: string; name: string },
+  actionId: string,
+  format: string,
+): Promise<void> {
+  const res = await executor.executeRollback(
+    { resource: 'rules', action: 'rollback', instance: resolved },
+    actionId,
+    async (handle) => {
+      if (!handle || typeof handle !== 'object') {
+        throw new CliError({ code: 'UNSUPPORTED_OPERATION', message: 'Invalid rollback handle' });
+      }
+      const h = handle as any;
+      if (h.type === 'rules.patch') {
+        const file_id = String(h.file_id);
+        const prev_text = String(h.prev_text ?? '');
+        const plan = await service.planPatchFromText(file_id, prev_text, 'replace', resolved.id);
+        const out = await service.applyPlannedPatch(plan, prev_text, resolved.id);
+        return { rolled_back: true, kind: 'patch', file_id, result: out };
+      }
+      if (h.type === 'rules.import') {
+        const file_id = String(h.file_id);
+        const out = await service.removeRuleSet(file_id, resolved.id);
+        return { rolled_back: true, kind: 'import', file_id, result: out };
+      }
+      if (h.type === 'rules.enable' || h.type === 'rules.disable') {
+        const file_id = String(h.file_id);
+        const prev_enabled = Boolean(h.prev_enabled);
+        const out = await service.setEnabled(file_id, prev_enabled, resolved.id);
+        return { rolled_back: true, kind: 'enabled', file_id, prev_enabled, result: out };
+      }
+
+      throw new CliError({
+        code: 'UNSUPPORTED_OPERATION',
+        message: 'Unsupported rollback handle type',
+        reason: String(h.type ?? '<unknown>'),
+      });
+    },
+  );
+
+  process.stdout.write(
+    renderEnvelope(okEnvelope('rules', 'rollback', res, { instance: resolved, effective: true }), format as OutputFormat),
+  );
 }
 
 export function registerRulesResource(program: Command): void {
@@ -30,48 +78,7 @@ export function registerRulesResource(program: Command): void {
       const action = 'rollback';
 
       try {
-        const res = await executor.executeRollback(
-          { resource: 'rules', action, instance: resolved },
-          cmdOpts.actionId,
-          async (handle) => {
-            if (!handle || typeof handle !== 'object') {
-              throw new CliError({ code: 'UNSUPPORTED_OPERATION', message: 'Invalid rollback handle' });
-            }
-            const h = handle as any;
-            if (h.type === 'rules.patch') {
-              const file_id = String(h.file_id);
-              const prev_text = String(h.prev_text ?? '');
-              const plan = await service.planPatchFromText(file_id, prev_text, 'replace', resolved.id);
-              const out = await service.applyPlannedPatch(plan, prev_text, resolved.id);
-              return { rolled_back: true, kind: 'patch', file_id, result: out };
-            }
-            if (h.type === 'rules.import') {
-              const file_id = String(h.file_id);
-              const out = await service.removeRuleSet(file_id, resolved.id);
-              return { rolled_back: true, kind: 'import', file_id, result: out };
-            }
-            if (h.type === 'rules.enable') {
-              const file_id = String(h.file_id);
-              const prev_enabled = Boolean(h.prev_enabled);
-              const out = await service.setEnabled(file_id, prev_enabled, resolved.id);
-              return { rolled_back: true, kind: 'enable', file_id, prev_enabled, result: out };
-            }
-            if (h.type === 'rules.disable') {
-              const file_id = String(h.file_id);
-              const prev_enabled = Boolean(h.prev_enabled);
-              const out = await service.setEnabled(file_id, prev_enabled, resolved.id);
-              return { rolled_back: true, kind: 'disable', file_id, prev_enabled, result: out };
-            }
-
-            throw new CliError({
-              code: 'UNSUPPORTED_OPERATION',
-              message: 'Unsupported rollback handle type',
-              reason: String(h.type ?? '<unknown>'),
-            });
-          },
-        );
-
-        process.stdout.write(renderEnvelope(okEnvelope('rules', action, res, { instance: resolved, effective: true }), format));
+        await runRulesRollback(executor, service, resolved, cmdOpts.actionId, format);
       } catch (e) {
         const err = CliError.fromUnknown(e);
         process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
@@ -116,12 +123,24 @@ export function registerRulesResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
+    .option('--rollback <actionId>', 'Rollback a previous action instead of importing')
     .action(async (cmdOpts: { name: string; file: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'import';
       const pav = resolvePavFlags(cmdOpts);
+
+      if ((cmdOpts as any).rollback) {
+        try {
+          await runRulesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('rules', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
 
       try {
         const text = await fs.readFile(cmdOpts.file, 'utf8');
@@ -168,12 +187,24 @@ export function registerRulesResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Write the file')
     .option('--verify', 'Verify after write')
+    .option('--rollback <actionId>', 'Rollback a previous action instead of exporting')
     .action(async (cmdOpts: { id: string; out: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'export';
       const pav = resolvePavFlags(cmdOpts);
+
+      if ((cmdOpts as any).rollback) {
+        try {
+          await runRulesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('rules', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
 
       try {
         const result = await executor.execute(
@@ -218,12 +249,24 @@ export function registerRulesResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
+    .option('--rollback <actionId>', 'Rollback a previous action instead of applying')
     .action(async (cmdOpts: { id: string; file: string; mode: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'apply';
       const pav = resolvePavFlags(cmdOpts);
+
+      if ((cmdOpts as any).rollback) {
+        try {
+          await runRulesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('rules', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
 
       try {
         const patchText = await fs.readFile(cmdOpts.file, 'utf8');
@@ -330,12 +373,24 @@ export function registerRulesResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
+    .option('--rollback <actionId>', 'Rollback a previous action instead of enabling')
     .action(async (cmdOpts: { id: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'enable';
       const pav = resolvePavFlags(cmdOpts);
+
+      if ((cmdOpts as any).rollback) {
+        try {
+          await runRulesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('rules', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
 
       try {
         const result = await executor.execute(
@@ -379,12 +434,24 @@ export function registerRulesResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
+    .option('--rollback <actionId>', 'Rollback a previous action instead of disabling')
     .action(async (cmdOpts: { id: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'disable';
       const pav = resolvePavFlags(cmdOpts);
+
+      if ((cmdOpts as any).rollback) {
+        try {
+          await runRulesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('rules', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
 
       try {
         const result = await executor.execute(
