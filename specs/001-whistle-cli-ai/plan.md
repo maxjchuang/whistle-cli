@@ -1,6 +1,6 @@
 # Implementation Plan: Whistle AI CLI
 
-**Branch**: `001-whistle-cli-ai` | **Date**: 2026-04-28 | **Spec**: [spec.md](/Users/bytedance/Projects/github/whistle-cli/specs/001-whistle-cli-ai/spec.md)
+**Branch**: `001-whistle-cli-ai` | **Date**: 2026-04-28 | **Spec**: [spec.md](specs/001-whistle-cli-ai/spec.md)
 **Input**: Feature specification from `/specs/001-whistle-cli-ai/spec.md`
 
 **Note**: This template is filled in by the `/speckit-plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
@@ -94,11 +94,11 @@ tests/
 
 ## Phase 1: Design Outputs
 
-- [research.md](/Users/bytedance/Projects/github/whistle-cli/specs/001-whistle-cli-ai/research.md)
-- [data-model.md](/Users/bytedance/Projects/github/whistle-cli/specs/001-whistle-cli-ai/data-model.md)
-- [quickstart.md](/Users/bytedance/Projects/github/whistle-cli/specs/001-whistle-cli-ai/quickstart.md)
-- [contracts/resource-commands.md](/Users/bytedance/Projects/github/whistle-cli/specs/001-whistle-cli-ai/contracts/resource-commands.md)
-- [contracts/output-contract.md](/Users/bytedance/Projects/github/whistle-cli/specs/001-whistle-cli-ai/contracts/output-contract.md)
+- [research.md](specs/001-whistle-cli-ai/research.md)
+- [data-model.md](specs/001-whistle-cli-ai/data-model.md)
+- [quickstart.md](specs/001-whistle-cli-ai/quickstart.md)
+- [contracts/resource-commands.md](specs/001-whistle-cli-ai/contracts/resource-commands.md)
+- [contracts/output-contract.md](specs/001-whistle-cli-ai/contracts/output-contract.md)
 
 ## Post-Design Constitution Check
 

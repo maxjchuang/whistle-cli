@@ -68,7 +68,7 @@
 - [x] T024 [P] [US1] Implement proxy state inspection and verification logic in src/domain/proxy-service.ts
 - [x] T025 [US1] Implement resource commands for `instance start/stop/restart/status/list/select` in src/resources/instance.ts
 - [x] T026 [US1] Implement resource commands for `certs status/install/verify/guide` in src/resources/certs.ts
-- [x] T027 [US1] Implement resource commands for `proxy status/set/off/verify` in src/resources/proxy.ts
+- [x] T027 [US1] Implement resource commands for `proxy status/set/off/verify` (including shared `--rollback <action-id>` support on mutating commands and rollback handle persistence) in src/resources/proxy.ts
 - [x] T028 [US1] Implement doctor flows for `instance-status`, `proxy-routing`, and `https-capture` in src/doctor/system-doctor.ts
 - [x] T029 [US1] Implement the `doctor` command surface and blocked-flow serialization in src/resources/doctor.ts
 - [x] T030 [US1] Implement local permission detection and remediation hints for cert/proxy mutations in src/doctor/permission-checks.ts and src/domain/flow-runner.ts
