@@ -34,6 +34,8 @@ export interface Envelope<TData = unknown> {
   status: EnvelopeStatus;
   resource: ResourceName;
   action: string;
+  /** Streaming event type for ndjson streams like `captures tail` (contract: output-contract.md). */
+  event?: string;
   instance?: InstanceRef;
   effective?: boolean;
   data?: TData;
@@ -47,7 +49,7 @@ export function okEnvelope<TData>(
   resource: ResourceName,
   action: string,
   data: TData,
-  opts?: Partial<Pick<Envelope<TData>, 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>>,
+  opts?: Partial<Pick<Envelope<TData>, 'event' | 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>>,
 ): Envelope<TData> {
   return {
     status: 'ok',
@@ -62,7 +64,7 @@ export function blockedEnvelope<TData>(
   resource: ResourceName,
   action: string,
   data: TData,
-  opts?: Partial<Pick<Envelope<TData>, 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>>,
+  opts?: Partial<Pick<Envelope<TData>, 'event' | 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>>,
 ): Envelope<TData> {
   return {
     status: 'blocked',
@@ -79,7 +81,7 @@ export function warningEnvelope<TData>(
   action: string,
   data: TData,
   warnings: string[],
-  opts?: Partial<Pick<Envelope<TData>, 'instance' | 'effective' | 'next_actions' | 'meta'>>,
+  opts?: Partial<Pick<Envelope<TData>, 'event' | 'instance' | 'effective' | 'next_actions' | 'meta'>>,
 ): Envelope<TData> {
   return {
     status: 'warning',
@@ -95,7 +97,7 @@ export function errorEnvelope(
   resource: ResourceName,
   action: string,
   error: { details: ErrorDetails } | ErrorDetails,
-  opts?: Partial<Pick<Envelope, 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>>,
+  opts?: Partial<Pick<Envelope, 'event' | 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>>,
 ): Envelope {
   const details = 'details' in error ? error.details : error;
   return {

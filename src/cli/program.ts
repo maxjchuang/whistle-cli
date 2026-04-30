@@ -6,6 +6,7 @@ import { registerProxyResource } from '../resources/proxy';
 import { registerDoctorResource } from '../resources/doctor';
 import { registerRulesResource } from '../resources/rules';
 import { registerValuesResource } from '../resources/values';
+import { registerCapturesResource } from '../resources/captures';
 import { registerBootstrapShortcuts } from '../shortcuts/bootstrap';
 import { registerRulesShortcuts } from '../shortcuts/rules';
 
@@ -37,6 +38,7 @@ export function buildProgram(): Command {
 
   registerRulesResource(program);
   registerValuesResource(program);
+  registerCapturesResource(program);
 
   registerBootstrapShortcuts(program);
   registerRulesShortcuts(program);
