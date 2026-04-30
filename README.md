@@ -5,7 +5,7 @@ AI-friendly CLI facade over [Whistle](https://github.com/avwo/whistle).
 ## Prerequisites
 
 - Node.js >= 20
-- `whistle` installed (`npm install -g whistle`)
+- `whistle` installed (`npm install -g whistle`) so `w2` is available on PATH
 
 ## Install
 
@@ -48,8 +48,10 @@ whistle-cli provides three layers of commands:
 
 - `instance` — start / stop / restart / status / list / select
 - `rules` — list / get / patch / apply / verify / enable / disable / import / export
-- `mocks` — list / create / update / enable / disable / delete
+- `values` — list / get / set / remove / import / export / rollback
 - `captures` — find / get / tail / diff / export
+- `composer` — replay / compose
+- `frames` — list / send
 - `certs` — status / install / verify / guide
 - `proxy` — status / set / off / verify
 - `plugins` — list / install / uninstall / enable / disable / inspect
@@ -74,7 +76,7 @@ All output is a structured JSON envelope designed for machine parsing:
 ```json
 {
   "status": "ok | warning | error | blocked",
-  "resource": "raw | instance | rules | mocks | captures | certs | proxy | plugins | doctor",
+  "resource": "raw | instance | rules | values | captures | composer | frames | certs | proxy | plugins | doctor",
   "action": "w2 status",
   "data": {},
   "error": {
@@ -126,9 +128,8 @@ All output is a structured JSON envelope designed for machine parsing:
    whistle-cli instance start
 
 3. Safe mutation (preview -> apply -> verify)
-   whistle-cli rules patch --preview
-   whistle-cli rules patch --apply
-   whistle-cli rules patch --verify
+   whistle-cli rules patch --id main --file ./patch.txt --format json
+   whistle-cli rules apply --id main --file ./patch.txt --verify --format json
 
 4. Diagnose issues
    whistle-cli captures find --host api.example.com
@@ -184,15 +185,17 @@ npm run lint
 | Command | Status |
 |---------|--------|
 | `raw w2 [args]` | Available |
-| `instance/*` | Planned |
-| `rules/*` | Planned |
-| `mocks/*` | Planned |
-| `captures/*` | Planned |
-| `certs/*` | Planned |
-| `proxy/*` | Planned |
-| `plugins/*` | Planned |
-| `doctor/*` | Planned |
-| `shortcuts/*` | Planned |
+| `instance/*` | Available |
+| `rules/*` | Available |
+| `values/*` | Available |
+| `captures/*` | Available |
+| `composer/*` | Available |
+| `frames/*` | Available |
+| `certs/*` | Available |
+| `proxy/*` | Available |
+| `plugins/*` | Available |
+| `doctor/*` | Available |
+| `shortcuts/*` | Available |
 
 ## License
 

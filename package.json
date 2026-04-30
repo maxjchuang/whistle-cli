@@ -11,12 +11,12 @@
     "whistle-cli": "dist/cli/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/cli/index.ts",
-    "lint": "eslint .",
-    "format": "prettier -w .",
-    "test": "node -e \"const maj=Number(process.versions.node.split('.')[0]); if(maj<20){console.error('Node.js >= 20 is required (current: '+process.versions.node+').'); process.exit(1);}\" && vitest run",
-    "test:watch": "vitest"
+    "build": "./scripts/node ./node_modules/typescript/bin/tsc -p tsconfig.json",
+    "dev": "./scripts/node ./node_modules/tsx/dist/cli.mjs src/cli/index.ts",
+    "lint": "./scripts/node ./node_modules/eslint/bin/eslint.js .",
+    "format": "./scripts/node ./node_modules/prettier/bin/prettier.cjs -w .",
+    "test": "./scripts/node ./node_modules/vitest/vitest.mjs run",
+    "test:watch": "./scripts/node ./node_modules/vitest/vitest.mjs"
   },
   "dependencies": {
     "commander": "^14.0.3",

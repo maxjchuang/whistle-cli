@@ -15,6 +15,14 @@
 - Q: v1 的权限边界是什么？ → A: 不做额外权限系统，只运行在当前用户本机权限范围内
 - Q: v1 的正式验收平台边界是什么？ → A: 正式验收 macOS 和 Linux headless，Windows 延后
 
+### Session 2026-04-29
+
+- Q: v1 插件标识符（name / scope / version）输入格式与校验规则是什么？ → A: 接受 npm package spec：`whistle.<name>` / `@scope/whistle.<name>`，可选 `@<semver>`（如 `whistle.cache@1.2.3`）；拒绝空白、包含空格或 shell 控制字符的输入
+- Q: v1 支持哪些插件安装来源？哪些明确不在范围内？ → A: 仅支持 npm registry 安装（等价于 `w2` 的 install 行为）；本地 tarball/git/path 安装与离线包仓库不作为 v1 正式能力
+- Q: v1 的“update”语义如何落地（独立命令 vs install 复用）？ → A: 不引入 `plugins update` 独立资源动作；`plugins install <name@version?>` 既用于首次安装也用于升级/降级（不传 version 视为安装/升级到 latest），且默认不改变当前 enabled/disabled 状态
+- Q: v1 的插件生命周期状态与幂等策略是什么？ → A: 规范化状态为 `installed|enabled|disabled|unknown`；`install/enable/disable/uninstall` 需尽量幂等（重复执行返回 `status=ok` 或 `status=warning` 且不破坏现有环境）
+- Q: v1 的多实例与 rollback 语义如何定义？ → A: 插件操作作用于 `--instance` 指定的实例存储作用域（未指定时为当前默认实例）；`--rollback <action-id>` 仅对 whistle-cli 自己记录过的 install/uninstall/enable/disable 变更做 best-effort 回滚（含版本回退仅在可确定之前版本时保证）
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Bootstrap And Control Whistle (Priority: P1)
@@ -80,6 +88,24 @@ As a power user or platform engineer, I can manage Whistle plugins through `whis
 2. **Given** an installed plugin, **When** the user asks to inspect it, **Then** the tool presents its lifecycle state and metadata in a readable summary.
 3. **Given** a plugin exposes custom actions beyond lifecycle management, **When** the user asks to invoke them, **Then** the tool clearly reports that unified plugin action invocation is not part of the v1 contract.
 
+#### Command Mapping (v1)
+
+- `whistle-cli plugins list`
+- `whistle-cli plugins inspect <name>`
+- `whistle-cli plugins install <name[@version]> --preview|--apply|--verify`
+- `whistle-cli plugins enable <name> --preview|--apply|--verify`
+- `whistle-cli plugins disable <name> --preview|--apply|--verify`
+- `whistle-cli plugins uninstall <name> --preview|--apply|--verify`
+
+#### Lifecycle Semantics (v1)
+
+- Identity: plugin input is an npm package spec (`whistle.<name>` / `@scope/whistle.<name>` with optional `@version`).
+- Source: npm registry only; local tarball/git/path installs are explicitly out of scope for v1.
+- Update: `install` is the single entry for install/upgrade/downgrade (latest if version omitted) and does not implicitly flip enabled state.
+- Multi-instance: plugin operations are scoped by the resolved instance (`--instance`), using the instance storage directory as the source of truth.
+- Preserve environment: lifecycle operations should avoid mutating unrelated rules/values; if the underlying plugin tooling triggers side effects, they must be surfaced as warnings.
+- Enable/disable capability: if the underlying backend cannot express enable/disable, commands must fail with a stable capability error and next action suggesting `raw w2` fallback.
+
 ### Edge Cases
 
 - What happens when the user machine has multiple Whistle instances, multiple storage directories, or conflicting ports?
@@ -105,10 +131,14 @@ As a power user or platform engineer, I can manage Whistle plugins through `whis
 - **FR-010**: System MUST let users replay captured requests and compose edited requests from scratch or from an existing capture using natural-language instructions.
 - **FR-011**: System MUST support WebSocket and TCP debugging workflows that Whistle exposes, including frame-oriented inspection and session-level send/receive control where available.
 - **FR-012**: System MUST let users install, update, enable, disable, inspect, and uninstall Whistle plugins through AI-guided commands.
+  - Plugin identifiers MUST accept npm package specs (`whistle.<name>` / `@scope/whistle.<name>`) with optional `@<semver>`.
+  - Plugin installation MUST target the npm registry in v1; local tarball/git/path sources are out of scope.
+  - “Update” MUST be supported via `plugins install <name@version?>` semantics (install latest when version omitted).
 - **FR-019**: System MUST limit v1 plugin support to lifecycle management and metadata inspection, while treating unified invocation of plugin-specific custom actions as out of scope for the initial release.
 - **FR-013**: System MUST explain operational blockers in user-readable language, including missing prerequisites, permission issues, certificate trust requirements, unavailable plugins, or unsupported device/network conditions.
 - **FR-014**: System MUST maintain an auditable history of AI-issued actions, including what the user asked for, what Whistle-facing change was applied, and whether the change was temporary or persistent.
 - **FR-015**: System MUST support safe rollback or reversal for the changes it applies to rules, values, proxy state, and plugin configuration whenever those artifacts were modified by the tool during the current workflow.
+  - For plugins, rollback MUST be best-effort and limited to tool-recorded lifecycle mutations (`install/uninstall/enable/disable`), restoring the prior lifecycle state when deterministically known.
 - **FR-016**: System MUST distinguish between read-only requests, temporary debugging actions, and persistent configuration changes so users can control when a change should survive the current session, with AI-initiated rule, mock, and proxy changes defaulting to persistent unless the user explicitly requests a temporary scope.
 - **FR-017**: System MUST help users understand existing Whistle configurations by translating current rules, values, captures, and plugin state into concise natural-language explanations.
 - **FR-018**: System MUST support workflows for local desktop use, headless server use, and remote/mobile device access to the extent those workflows are supported by Whistle itself, with formal v1 acceptance focused on macOS desktop and Linux headless environments.

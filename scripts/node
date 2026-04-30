@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+pick_node() {
+  local candidate
+  for candidate in node nodejs; do
+    if ! command -v "$candidate" >/dev/null 2>&1; then
+      continue
+    fi
+    local major
+    major="$($candidate -p "Number(process.versions.node.split('.')[0])" 2>/dev/null || true)"
+    if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 20 )); then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+NODE_BIN="$(pick_node || true)"
+if [[ -z "$NODE_BIN" ]]; then
+  echo "Node.js >= 20 is required. Found: node=$(command -v node 2>/dev/null || echo '<missing>'), nodejs=$(command -v nodejs 2>/dev/null || echo '<missing>')." >&2
+  echo "Suggested fix: install Node.js 20+ (or ensure PATH points to it)." >&2
+  exit 1
+fi
+
+exec "$NODE_BIN" "$@"
+

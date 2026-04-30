@@ -96,9 +96,20 @@ Errors should use a stable code set with machine-readable hints.
 - `CAPTURE_BACKEND_UNAVAILABLE`
 - `PLUGIN_NOT_INSTALLED`
 - `PLUGIN_CAPABILITY_UNAVAILABLE`
+- `PLUGIN_INVALID_IDENTIFIER`
+- `PLUGIN_REGISTRY_UNAVAILABLE`
+- `PLUGIN_INSTALL_FAILED`
+- `PLUGIN_UNINSTALL_FAILED`
+- `PLUGIN_ENABLE_FAILED`
+- `PLUGIN_DISABLE_FAILED`
+- `PLUGIN_INSPECT_FAILED`
 - `PERMISSION_REQUIRED`
 - `USER_ACTION_REQUIRED`
 - `UNSUPPORTED_OPERATION`
+
+### Warnings
+
+`warnings` is an array of machine-readable warning codes (best-effort). For example, idempotent plugin operations MAY return `status=warning` with `warnings=["PLUGIN_NOT_INSTALLED"]` when the target plugin is already absent.
 
 ## Streaming Contract
 

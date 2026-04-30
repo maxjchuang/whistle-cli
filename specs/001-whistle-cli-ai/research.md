@@ -45,15 +45,15 @@
   - Import and manipulate Whistle internals directly as a library-first backend: cleaner long term, slower and riskier for v1.
   - Filesystem-only integration: insufficient for runtime-heavy workflows such as captures and replay.
 
-## Decision 4: Separate `mocks` from `rules` in the public domain model
+## Decision 4: Do not expose `mocks` as a first-class resource in v1
 
-- Decision: Expose `mocks` as a first-class resource even if the underlying implementation maps to rules and values.
+- Decision: v1 does **not** introduce a separate `mocks` resource. Mocking workflows are expressed via `rules` / `values` intents (e.g. response overrides) with the same `preview -> apply -> verify` and rollback semantics.
 - Rationale:
-  - The Lark design discussion explicitly identified mocking as a high-frequency semantic object for AI.
-  - AI requests like “mock `/save` with this JSON for 30 minutes” are clearer, safer, and easier to reverse when modeled as a dedicated resource.
-  - This avoids forcing AI to edit large rule documents for simple response overrides.
+  - Mocking is a high-frequency semantic object for AI, but a dedicated resource is not required to ship a stable v1 contract.
+  - Using rules/values intents keeps the v1 resource surface smaller and aligned with the canonical contract, while still enabling common “mock an endpoint” workflows.
+  - A future v2 can still add a first-class `mocks` resource if the ergonomics justify it, without breaking the v1 rule/value model.
 - Alternatives considered:
-  - Keep mocks as rule patches only: faithful to Whistle internals, but poor ergonomics and weaker lifecycle control.
+  - Expose mocks as a first-class resource in v1: better semantics, but increases surface area and contract burden for the initial milestone.
 
 ## Decision 5: Standardize all mutating commands around `preview -> apply -> verify`
 
