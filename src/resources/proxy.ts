@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import type { OutputFormat } from '../cli/program';
 import { ProxyService } from '../domain/proxy-service';
 import { InstanceService } from '../domain/instance-service';
 import { ActionExecutor } from '../domain/action-executor';
@@ -14,6 +15,55 @@ function resolvePavFlags(cmdOpts: { preview?: boolean; apply?: boolean; verify?:
   const verify = Boolean(cmdOpts.verify);
   const apply = Boolean(cmdOpts.apply) || verify || (!preview && !cmdOpts.apply && !cmdOpts.verify);
   return { preview, apply, verify };
+}
+
+async function runProxyRollback(
+  executor: ActionExecutor,
+  service: ProxyService,
+  resolved: { id: string; name: string },
+  actionId: string,
+  format: OutputFormat,
+): Promise<void> {
+  const res = await executor.executeRollback(
+    { resource: 'proxy', action: 'rollback', instance: resolved },
+    actionId,
+    async (handle) => {
+      if (!handle || typeof handle !== 'object') {
+        throw new CliError({ code: 'UNSUPPORTED_OPERATION', message: 'Invalid rollback handle' });
+      }
+      const h = handle as any;
+
+      // Backwards compatibility: older proxy actions stored a generic `w2` handle.
+      if (h.type === 'w2' && Array.isArray(h.args) && h.args[0] === 'proxy') {
+        const arg = String(h.args[1] ?? '0');
+        const n = Number(arg);
+        if (Number.isFinite(n) && n > 0) {
+          const out = await service.setSystemProxy(n, resolved.id);
+          return { rolled_back: true, kind: 'system', restored_port: n, result: out };
+        }
+        const out = await service.offSystemProxy(resolved.id);
+        return { rolled_back: true, kind: 'system', restored_port: 0, result: out };
+      }
+
+      if (h.type === 'proxy.system') {
+        const prev_port = typeof h.prev_port === 'number' ? h.prev_port : null;
+        if (prev_port && prev_port > 0) {
+          const out = await service.setSystemProxy(prev_port, resolved.id);
+          return { rolled_back: true, kind: 'system', restored_port: prev_port, result: out };
+        }
+        const out = await service.offSystemProxy(resolved.id);
+        return { rolled_back: true, kind: 'system', restored_port: 0, result: out };
+      }
+
+      throw new CliError({
+        code: 'UNSUPPORTED_OPERATION',
+        message: 'Unsupported rollback handle type',
+        reason: String(h.type ?? '<unknown>'),
+      });
+    },
+  );
+
+  process.stdout.write(renderEnvelope(okEnvelope('proxy', 'rollback', res, { instance: resolved, effective: true }), format));
 }
 
 export function registerProxyResource(program: Command): void {
@@ -48,13 +98,25 @@ export function registerProxyResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
-    .action(async (cmdOpts: { preview?: boolean; apply?: boolean; verify?: boolean }) => {
+    .option('--rollback <actionId>', 'Rollback a previous action instead of setting')
+    .action(async (cmdOpts: { preview?: boolean; apply?: boolean; verify?: boolean; rollback?: string }) => {
       const opts = program.opts();
-      const format = opts.format ?? 'json';
+      const format = (opts.format ?? 'json') as OutputFormat;
       const nonInteractive = Boolean(opts.nonInteractive);
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'set';
       const pav = resolvePavFlags(cmdOpts);
+
+      if (cmdOpts.rollback) {
+        try {
+          await runProxyRollback(executor, service, resolved, String(cmdOpts.rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('proxy', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
 
       try {
         const inst = await instances.status(resolved.id);
@@ -109,10 +171,11 @@ export function registerProxyResource(program: Command): void {
           {
             preview: async () => ({ will_run: 'w2 proxy <port>', port: inst.port }),
             apply: async () => {
+              const prev_port = await service.currentSystemProxyPort(resolved.id);
               const res = await service.setSystemProxy(inst.port, resolved.id);
               return {
                 result: { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode, durationMs: res.durationMs },
-                rollback: { type: 'w2', args: ['proxy', '0'], instanceId: resolved.id },
+                rollback: { type: 'proxy.system', prev_port },
               };
             },
             verify: async () => service.status(inst.host, inst.port, resolved.id),
@@ -142,13 +205,25 @@ export function registerProxyResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
-    .action(async (cmdOpts: { preview?: boolean; apply?: boolean; verify?: boolean }) => {
+    .option('--rollback <actionId>', 'Rollback a previous action instead of turning off')
+    .action(async (cmdOpts: { preview?: boolean; apply?: boolean; verify?: boolean; rollback?: string }) => {
       const opts = program.opts();
-      const format = opts.format ?? 'json';
+      const format = (opts.format ?? 'json') as OutputFormat;
       const nonInteractive = Boolean(opts.nonInteractive);
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'off';
       const pav = resolvePavFlags(cmdOpts);
+
+      if (cmdOpts.rollback) {
+        try {
+          await runProxyRollback(executor, service, resolved, String(cmdOpts.rollback), format);
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(renderEnvelope(errorEnvelope('proxy', 'rollback', err, { instance: resolved }), format));
+          process.exitCode = 1;
+        }
+        return;
+      }
 
       try {
         const mode = service.detectMode();
@@ -187,9 +262,11 @@ export function registerProxyResource(program: Command): void {
           {
             preview: async () => ({ will_run: 'w2 proxy 0' }),
             apply: async () => {
+              const prev_port = await service.currentSystemProxyPort(resolved.id);
               const res = await service.offSystemProxy(resolved.id);
               return {
                 result: { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode, durationMs: res.durationMs },
+                rollback: { type: 'proxy.system', prev_port },
               };
             },
           },

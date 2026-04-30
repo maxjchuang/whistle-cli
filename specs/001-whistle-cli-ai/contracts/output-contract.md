@@ -11,7 +11,7 @@ All JSON responses should conform to the following high-level shape:
 ```json
 {
   "status": "ok | warning | error | blocked",
-  "resource": "instance | rules | values | mocks | captures | certs | proxy | plugins | doctor | raw",
+  "resource": "instance | rules | values | captures | certs | proxy | plugins | doctor | raw",
   "action": "string",
   "instance": {
     "id": "default",

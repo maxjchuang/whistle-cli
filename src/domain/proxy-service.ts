@@ -52,9 +52,23 @@ export class ProxyService {
   }
 
   detectMode(): ProxyMode {
+    const override = (process.env.WHISTLE_CLI_PROXY_MODE || '').trim().toLowerCase();
+    if (override === 'system' || override === 'env') return override as ProxyMode;
     // On Linux headless, environment variables are the most reliable user-controlled proxy.
     if (process.platform === 'linux') return 'env';
     return 'system';
+  }
+
+  async currentSystemProxyPort(instanceId?: string): Promise<number | null> {
+    const res = await this.w2.proxyStatus({ instanceId });
+    ensureW2Available(res);
+    const merged = `${res.stdout}\n${res.stderr}`;
+    // Best-effort parse for outputs like: "127.0.0.1:8899" or "localhost:8899".
+    const m = merged.match(/\b(?:localhost|127\.0\.0\.1|\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})\b/);
+    if (!m?.[1]) return null;
+    const port = Number(m[1]);
+    if (!Number.isFinite(port)) return null;
+    return port;
   }
 
   async status(expectedHost: string, expectedPort: number, instanceId?: string): Promise<ProxyStatus> {
@@ -121,4 +135,3 @@ export class ProxyService {
     };
   }
 }
-

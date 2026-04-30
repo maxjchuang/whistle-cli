@@ -68,8 +68,8 @@ tests/
 **Structure Decision**: Use a single-project CLI layout. The repository is currently an empty feature skeleton, so the plan establishes the target source tree around the semantic facade architecture chosen in research:
 
 - `src/cli`: argument parsing, command registration, format negotiation
-- `src/shortcuts`: AI/human high-frequency entrypoints such as `rule set-header`, `mock reply`, `doctor https`
-- `src/resources`: stable resource commands for instances, rules, mocks, captures, certs, proxy, plugins
+- `src/shortcuts`: AI/human high-frequency entrypoints such as `rule set-header`, `doctor https`
+- `src/resources`: stable resource commands for instances, rules, captures, certs, proxy, plugins
 - `src/backends/raw`: `w2` subprocess adapter
 - `src/backends/storage`: persisted Whistle state adapter
 - `src/backends/runtime`: runtime/session/replay adapter
@@ -110,5 +110,4 @@ tests/
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| Dedicated `mocks` resource alongside `rules` | Mocking is a high-frequency AI intent with its own lifecycle, rollback, and expiry concerns | Treating mocks as raw rule edits would expose too much Whistle syntax and make AI mutations harder to verify and reverse |
 | Three command layers (`shortcuts`, `resources`, `raw`) | The feature must serve both AI-first workflows and full Whistle coverage | A thin `w2` wrapper is easier, but too unstable and inconsistent as the control plane AI depends on |

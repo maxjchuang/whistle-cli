@@ -128,10 +128,10 @@
 **Independent Test**: A user can install, inspect, enable, disable, update, and uninstall a Whistle plugin through structured commands, and gets a clear out-of-scope response if they ask to invoke plugin-specific custom actions.
 
 - [ ] T053 [P] [US4] Implement the plugin record model and lifecycle state normalization in src/domain/plugins-model.ts
-- [ ] T054 [US4] Implement plugin lifecycle orchestration and metadata inspection in src/domain/plugins-service.ts
-- [ ] T055 [US4] Implement resource commands for `plugins list/install/uninstall/enable/disable/inspect` in src/resources/plugins.ts
+- [ ] T054 [US4] Implement plugin lifecycle orchestration and metadata inspection (including rollback handle generation for tool-applied mutations) in src/domain/plugins-service.ts
+- [ ] T055 [US4] Implement resource commands for `plugins list/install/uninstall/enable/disable/inspect` with shared `--rollback <action-id>` support on mutating commands in src/resources/plugins.ts
 - [ ] T056 [US4] Implement plugin-management shortcuts and out-of-scope custom-action handling in src/shortcuts/plugins.ts
-- [ ] T057 [US4] Extend the raw backend adapter for plugin install, uninstall, and status flows in src/backends/raw/w2-client.ts
+- [ ] T057 [US4] Extend the raw backend adapter for plugin install, uninstall, enable, disable, and status flows in src/backends/raw/w2-client.ts
 - [ ] T058 [US4] Add plugin lifecycle validation fixtures and unsupported-action scenarios in tests/integration/us4-plugins.fixtures.ts
 
 **Checkpoint**: All user stories should now be independently functional

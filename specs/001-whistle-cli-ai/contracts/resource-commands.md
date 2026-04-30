@@ -20,7 +20,6 @@ Examples:
 
 ```text
 whistle-cli rule set-header --match host=localhost:4001 --header env=prelease
-whistle-cli mock reply --match POST:/save --status 200 --body-file ./fixtures/save.json
 whistle-cli capture find --host api.example.com --keyword timeout
 whistle-cli doctor https-capture
 whistle-cli cert install --target local
@@ -35,7 +34,6 @@ Supported top-level resources for v1:
 - `instance`
 - `rules`
 - `values`
-- `mocks`
 - `captures`
 - `certs`
 - `proxy`
@@ -47,7 +45,6 @@ Examples:
 ```text
 whistle-cli instance start
 whistle-cli rules patch --ruleset default --intent set-header --match host=localhost:4001 --header env=prelease --preview
-whistle-cli mocks create --name save-mock --match POST:/save --status 200 --body-file ./fixtures/save.json
 whistle-cli captures find --host api.example.com --limit 30
 whistle-cli certs verify --target local_system
 whistle-cli proxy set --mode system --instance default
@@ -113,15 +110,6 @@ If `--rollback <action-id>` is provided for a supported resource, the command sh
 - `import`
 - `export`
 - `rollback`
-
-### `mocks`
-
-- `list`
-- `create`
-- `update`
-- `enable`
-- `disable`
-- `delete`
 
 ### `captures`
 
