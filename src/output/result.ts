@@ -5,6 +5,7 @@ export type EnvelopeStatus = 'ok' | 'warning' | 'error' | 'blocked';
 export type ResourceName =
   | 'instance'
   | 'rules'
+  | 'values'
   | 'mocks'
   | 'captures'
   | 'certs'
@@ -106,4 +107,3 @@ export function errorEnvelope(
     ...opts,
   };
 }
-

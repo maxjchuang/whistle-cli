@@ -15,7 +15,7 @@
     "dev": "tsx src/cli/index.ts",
     "lint": "eslint .",
     "format": "prettier -w .",
-    "test": "vitest run",
+    "test": "node -e \"const maj=Number(process.versions.node.split('.')[0]); if(maj<20){console.error('Node.js >= 20 is required (current: '+process.versions.node+').'); process.exit(1);}\" && vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {

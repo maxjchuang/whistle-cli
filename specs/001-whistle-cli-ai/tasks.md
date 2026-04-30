@@ -85,15 +85,15 @@
 
 **Independent Test**: A user can request a rule or value change, inspect the preview, apply it to the default or selected instance, verify that it took effect, and ask the tool to explain the resulting configuration.
 
-- [ ] T033 [P] [US2] Implement the rule set, rule patch, and value entry models in src/domain/rules-model.ts
-- [ ] T034 [P] [US2] Implement value entry persistence and import/export helpers in src/domain/values-service.ts
-- [ ] T035 [US2] Implement rule patch planning, diff generation, and conflict detection in src/domain/rules-service.ts
-- [ ] T036 [US2] Implement resource commands for `rules list/get/patch/apply/verify/enable/disable/import/export` in src/resources/rules.ts
-- [ ] T037 [US2] Implement resource commands for value inspection and persistence management in src/resources/values.ts
-- [ ] T038 [US2] Implement natural-language-to-intent shortcuts such as `rule set-header` and `rule map-local` in src/shortcuts/rules.ts
-- [ ] T039 [US2] Implement configuration explanation and persistence-scope reporting for rules and values in src/domain/config-explainer.ts
-- [ ] T040 [US2] Wire rule and value action logging, rollback handles, and persistent-default behavior into src/domain/action-executor.ts
-- [ ] T041 [US2] Add rule/value command fixtures covering preview, apply, verify, and explain scenarios in tests/integration/us2-rules.fixtures.ts
+- [x] T033 [P] [US2] Implement the rule set, rule patch, and value entry models in src/domain/rules-model.ts
+- [x] T034 [P] [US2] Implement value entry persistence and import/export helpers in src/domain/values-service.ts
+- [x] T035 [US2] Implement rule patch planning, diff generation, and conflict detection in src/domain/rules-service.ts
+- [x] T036 [US2] Implement resource commands for `rules list/get/patch/apply/verify/enable/disable/import/export` in src/resources/rules.ts
+- [x] T037 [US2] Implement resource commands for value inspection and persistence management in src/resources/values.ts
+- [x] T038 [US2] Implement natural-language-to-intent shortcuts such as `rule set-header` and `rule map-local` in src/shortcuts/rules.ts
+- [x] T039 [US2] Implement configuration explanation and persistence-scope reporting for rules and values in src/domain/config-explainer.ts
+- [x] T040 [US2] Wire rule and value action logging, rollback handles, and persistent-default behavior into src/domain/action-executor.ts
+- [x] T041 [US2] Add rule/value command fixtures covering preview, apply, verify, and explain scenarios in tests/integration/us2-rules.fixtures.ts
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 

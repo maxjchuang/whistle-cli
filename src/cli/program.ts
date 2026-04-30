@@ -4,7 +4,10 @@ import { registerInstanceResource } from '../resources/instance';
 import { registerCertsResource } from '../resources/certs';
 import { registerProxyResource } from '../resources/proxy';
 import { registerDoctorResource } from '../resources/doctor';
+import { registerRulesResource } from '../resources/rules';
+import { registerValuesResource } from '../resources/values';
 import { registerBootstrapShortcuts } from '../shortcuts/bootstrap';
+import { registerRulesShortcuts } from '../shortcuts/rules';
 
 export type OutputFormat = 'json' | 'pretty' | 'table' | 'ndjson';
 
@@ -32,7 +35,11 @@ export function buildProgram(): Command {
   registerProxyResource(program);
   registerDoctorResource(program);
 
+  registerRulesResource(program);
+  registerValuesResource(program);
+
   registerBootstrapShortcuts(program);
+  registerRulesShortcuts(program);
 
   return program;
 }
