@@ -127,12 +127,12 @@
 
 **Independent Test**: A user can install, inspect, enable, disable, update, and uninstall a Whistle plugin through structured commands, and gets a clear out-of-scope response if they ask to invoke plugin-specific custom actions.
 
-- [ ] T053 [P] [US4] Implement the plugin record model and lifecycle state normalization in src/domain/plugins-model.ts
-- [ ] T054 [US4] Implement plugin lifecycle orchestration and metadata inspection (including rollback handle generation for tool-applied mutations) in src/domain/plugins-service.ts
-- [ ] T055 [US4] Implement resource commands for `plugins list/install/uninstall/enable/disable/inspect` with shared `--rollback <action-id>` support on mutating commands in src/resources/plugins.ts
-- [ ] T056 [US4] Implement plugin-management shortcuts and out-of-scope custom-action handling in src/shortcuts/plugins.ts
-- [ ] T057 [US4] Extend the raw backend adapter for plugin install, uninstall, enable, disable, and status flows in src/backends/raw/w2-client.ts
-- [ ] T058 [US4] Add plugin lifecycle validation fixtures and unsupported-action scenarios in tests/integration/us4-plugins.fixtures.ts
+- [x] T053 [P] [US4] Implement the plugin record model and lifecycle state normalization in src/domain/plugins-model.ts
+- [x] T054 [US4] Implement plugin lifecycle orchestration and metadata inspection (including rollback handle generation for tool-applied mutations) in src/domain/plugins-service.ts
+- [x] T055 [US4] Implement resource commands for `plugins list/install/uninstall/enable/disable/inspect` with shared `--rollback <action-id>` support on mutating commands in src/resources/plugins.ts
+- [x] T056 [US4] Implement plugin-management shortcuts and out-of-scope custom-action handling in src/shortcuts/plugins.ts
+- [x] T057 [US4] Extend the raw backend adapter for plugin install, uninstall, enable, disable, and status flows in src/backends/raw/w2-client.ts
+- [x] T058 [US4] Add plugin lifecycle validation fixtures and unsupported-action scenarios in tests/integration/us4-plugins.fixtures.ts
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -142,13 +142,13 @@
 
 **Purpose**: Finalize cross-story quality, documentation, and release readiness for the accepted v1 platform matrix.
 
-- [ ] T059 [P] Add CLI usage documentation and architecture notes for the three-layer command surface in README.md
-- [ ] T060 Add a documented workflow coverage matrix for official Whistle workflow parity in specs/001-whistle-cli-ai/workflow-coverage.md
-- [ ] T061 Update quickstart validation steps and local setup guidance to match the implemented command surface in specs/001-whistle-cli-ai/quickstart.md
-- [ ] T062 [P] Add macOS and Linux headless acceptance scripts for the documented core workflows in tests/integration/acceptance-smoke.ts
-- [ ] T063 Harden logging, warning messages, and blocked-flow next actions across all resources in src/output/result.ts
-- [ ] T064 [P] Add final contract fixtures for result envelopes and stable error codes in tests/contract/output-envelope.contract.ts
-- [ ] T065 Run the quickstart flow end-to-end, validate workflow coverage against specs/001-whistle-cli-ai/workflow-coverage.md, and capture any final path/config adjustments in specs/001-whistle-cli-ai/quickstart.md
+- [x] T059 [P] Add CLI usage documentation and architecture notes for the three-layer command surface in README.md
+- [x] T060 Add a documented workflow coverage matrix for official Whistle workflow parity in specs/001-whistle-cli-ai/workflow-coverage.md
+- [x] T061 Update quickstart validation steps and local setup guidance to match the implemented command surface in specs/001-whistle-cli-ai/quickstart.md
+- [x] T062 [P] Add macOS and Linux headless acceptance scripts for the documented core workflows in tests/integration/acceptance-smoke.ts
+- [x] T063 Harden logging, warning messages, and blocked-flow next actions across all resources in src/output/result.ts
+- [x] T064 [P] Add final contract fixtures for result envelopes and stable error codes in tests/contract/output-envelope.contract.ts
+- [x] T065 Run the quickstart flow end-to-end, validate workflow coverage against specs/001-whistle-cli-ai/workflow-coverage.md, and capture any final path/config adjustments in specs/001-whistle-cli-ai/quickstart.md
 
 ---
 

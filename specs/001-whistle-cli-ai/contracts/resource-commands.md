@@ -165,6 +165,28 @@ If `--rollback <action-id>` is provided for a supported resource, the command sh
 - `disable`
 - `inspect`
 
+#### Plugin Identity (v1)
+
+- Commands that take a plugin identifier MUST accept an npm package spec:
+  - `whistle.<name>` (recommended)
+  - `@scope/whistle.<name>`
+  - Optional `@<semver>` suffix (e.g. `whistle.cache@1.2.3`)
+- v1 plugin installation source is npm registry only. Local tarball/git/path installation is out of scope.
+
+#### Plugin Update Semantics (v1)
+
+- v1 does not define a separate `plugins update` action.
+- `plugins install <name@version?>` MUST cover:
+  - Fresh install
+  - Upgrade to latest (version omitted)
+  - Upgrade/downgrade to a specific version (version provided)
+- `plugins install` MUST NOT implicitly flip enabled/disabled state.
+
+#### Rollback Semantics (v1)
+
+- Mutating plugin actions (`install/uninstall/enable/disable`) MUST emit an action id in the standard envelope meta (`meta.action_id`).
+- If `--rollback <action-id>` is provided, the command MUST attempt to restore the prior lifecycle state recorded by that action (best-effort).
+
 ### `doctor`
 
 - `instance-status`

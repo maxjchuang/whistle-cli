@@ -9,9 +9,11 @@ import { registerValuesResource } from '../resources/values';
 import { registerCapturesResource } from '../resources/captures';
 import { registerComposerResource } from '../resources/composer';
 import { registerFramesResource } from '../resources/frames';
+import { registerPluginsResource } from '../resources/plugins';
 import { registerBootstrapShortcuts } from '../shortcuts/bootstrap';
 import { registerRulesShortcuts } from '../shortcuts/rules';
 import { registerCapturesShortcuts } from '../shortcuts/captures';
+import { registerPluginsShortcuts } from '../shortcuts/plugins';
 
 export type OutputFormat = 'json' | 'pretty' | 'table' | 'ndjson';
 
@@ -44,10 +46,12 @@ export function buildProgram(): Command {
   registerCapturesResource(program);
   registerComposerResource(program);
   registerFramesResource(program);
+  registerPluginsResource(program);
 
   registerBootstrapShortcuts(program);
   registerRulesShortcuts(program);
   registerCapturesShortcuts(program);
+  registerPluginsShortcuts(program);
 
   return program;
 }

@@ -122,6 +122,24 @@ export class W2Client {
     return this.runFirstOk(attempts, opts);
   }
 
+  async pluginEnable(name: string, opts?: W2RunOptions): Promise<RunResult> {
+    const attempts: string[][] = [
+      ['plugin', 'enable', name],
+      ['plugins', 'enable', name],
+      ['enable', name],
+    ];
+    return this.runFirstOk(attempts, opts);
+  }
+
+  async pluginDisable(name: string, opts?: W2RunOptions): Promise<RunResult> {
+    const attempts: string[][] = [
+      ['plugin', 'disable', name],
+      ['plugins', 'disable', name],
+      ['disable', name],
+    ];
+    return this.runFirstOk(attempts, opts);
+  }
+
   private async runFirstOk(attempts: string[][], opts?: W2RunOptions): Promise<RunResult> {
     let last: RunResult | null = null;
     for (const args of attempts) {

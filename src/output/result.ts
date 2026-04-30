@@ -6,7 +6,6 @@ export type ResourceName =
   | 'instance'
   | 'rules'
   | 'values'
-  | 'mocks'
   | 'captures'
   | 'composer'
   | 'frames'
@@ -41,6 +40,10 @@ export interface Envelope<TData = unknown> {
   instance?: InstanceRef;
   effective?: boolean;
   data?: TData;
+  /**
+   * Warning codes (best-effort) for machine consumption.
+   * Contract: `specs/001-whistle-cli-ai/contracts/output-contract.md`.
+   */
   warnings?: string[];
   next_actions?: NextAction[];
   meta?: EnvelopeMeta;
