@@ -35,6 +35,8 @@ Supported top-level resources for v1:
 - `rules`
 - `values`
 - `captures`
+- `composer`
+- `frames`
 - `certs`
 - `proxy`
 - `plugins`
@@ -119,6 +121,27 @@ If `--rollback <action-id>` is provided for a supported resource, the command sh
 - `diff`
 - `export`
 
+#### Query Semantics (v1)
+
+- Supported filters: `host` (exact), `path` (substring), `method` (exact), `status` (exact integer), `keyword` (best-effort substring)
+- Ordering: best-effort recent-first (runtime backend decides)
+- Limits: `--limit` default 30, max 200 (values above max should be clamped)
+- `captures tail` streaming:
+  - Output format must be `ndjson`
+  - `event=capture` for each emitted capture envelope
+  - `event=end` for termination
+  - Errors should be reported as an `error` envelope (`event=error`) best-effort
+
+### `composer`
+
+- `replay`
+- `compose`
+
+### `frames`
+
+- `list`
+- `send`
+
 ### `certs`
 
 - `status`
@@ -157,6 +180,8 @@ Mutating commands must follow `preview -> apply -> verify` semantics.
 - `--preview` returns the intended change and verification plan.
 - `--apply` commits the change and emits an action log entry.
 - `--verify` checks runtime effectiveness and reports success, warning, or failure.
+
+Runtime-oriented commands (e.g. `composer`, `frames send`) are best-effort: `--verify` may only confirm that the backend accepted the request rather than proving external side effects.
 
 ### Read Commands
 
