@@ -34,12 +34,13 @@ describe('US1 bootstrap (integration)', () => {
     const stateDir = await makeTempDir('whistle-cli-state-');
     const appDataDir = await makeTempDir('whistle-cli-whistledata-');
 
-    // We do not force PATH missing here; this test is about non-interactive behavior.
-    // When w2 is missing, it will also fail, which is acceptable.
+    // Force deterministic backend failure path so this test does not depend on
+    // the local machine's real whistle/w2 startup speed.
     const res = await runCli(['bootstrap', 'prepare', '--format', 'json', '--non-interactive'], {
       env: {
         WHISTLE_CLI_STATE_DIR: stateDir,
         WHISTLE_APPDATA_DIR: appDataDir,
+        PATH: '/nonexistent',
       },
     });
     expect(res.exitCode).not.toBe(0);

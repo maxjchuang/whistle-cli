@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-whistle-cli-ai`  
 **Created**: 2026-04-28  
-**Status**: Draft  
+**Status**: Completed  
 **Input**: User description: "对 https://github.com/avwo/whistle 的功能做调研，我要做一款基于它的工具，名字叫 whistle-cli，支持 AI 友好的方式实现 whistle 的所有操作。"
 
 ## Clarifications
