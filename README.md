@@ -10,28 +10,28 @@ AI-friendly CLI facade over [Whistle](https://github.com/avwo/whistle).
 ## Install
 
 ```bash
-# Global
-npm install -g whistle-cli
-
-# Or local
-npm install whistle-cli
-export PATH="./node_modules/.bin:$PATH"
+# This repository (dev mode)
+npm install
+npm run dev -- --help
 ```
+
+> Note: this repo is currently configured as `"private": true` in `package.json`.
+> Publish/install from npm is not enabled by default.
 
 ## Quick Start
 
 ```bash
-# Check Whistle availability
-whistle-cli raw w2 status
+# Check command surface in dev mode
+npm run dev -- --help
 
-# Start a Whistle instance (via raw escape hatch)
-whistle-cli raw w2 start
+# Check Whistle availability
+npm run dev -- raw w2 status
 
 # Structured JSON output (default)
-whistle-cli --format json raw w2 status
+npm run dev -- --format json instance status
 
 # Human-readable output
-whistle-cli --format pretty raw w2 status
+npm run dev -- --format pretty instance status
 ```
 
 ## Command Structure
@@ -47,8 +47,8 @@ whistle-cli provides three layers of commands:
 ### Resource Commands (v1 target)
 
 - `instance` — start / stop / restart / status / list / select
-- `rules` — list / get / patch / apply / verify / enable / disable / import / export
-- `values` — list / get / set / remove / import / export / rollback
+- `rules` — rollback / patch / import / export / apply / verify / list / get / enable / disable
+- `values` — rollback / list / get / set / remove / import / export
 - `captures` — find / get / tail / diff / export
 - `composer` — replay / compose
 - `frames` — list / send
@@ -58,6 +58,13 @@ whistle-cli provides three layers of commands:
 - `doctor` — instance-status / proxy-routing / https-capture
 - `raw` — w2 passthrough
 
+### Shortcut Commands
+
+- `bootstrap` — `start` / `prepare`
+- `rule` — `set-header` / `map-local`
+- `capture` — `find` / `find-error`
+- `plugin` — `install` / `remove` / `inspect` / `invoke` (`invoke` is out of scope in v1)
+
 ### Global Flags
 
 | Flag | Description |
@@ -65,9 +72,15 @@ whistle-cli provides three layers of commands:
 | `--format <json\|pretty\|table\|ndjson>` | Output format, default `json` |
 | `--instance <id>` | Target instance, defaults to current |
 | `--non-interactive` | Fail instead of waiting for user action |
-| `--preview` | Show planned mutation without applying |
-| `--apply` | Apply a mutation |
-| `--verify` | Verify effective runtime behavior after apply |
+
+`--preview`, `--apply`, `--verify`, and `--rollback` are **command-level flags** on mutating resource commands (not global flags).
+
+Common rollback forms:
+
+- `rules rollback --action-id <id>`
+- `values rollback --action-id <id>`
+- `proxy set --rollback <id>`
+- `plugins install --rollback <id>`
 
 ## Output Envelope
 
@@ -122,18 +135,18 @@ All output is a structured JSON envelope designed for machine parsing:
 
 ```
 1. Environment check
-   whistle-cli raw w2 status
+   whistle-cli --format json instance status
 
 2. Start instance
-   whistle-cli instance start
+   whistle-cli --format json instance start
 
 3. Safe mutation (preview -> apply -> verify)
    whistle-cli rules patch --id main --file ./patch.txt --format json
-   whistle-cli rules apply --id main --file ./patch.txt --verify --format json
+   whistle-cli rules apply --id main --file ./patch.txt --apply --verify --format json
 
 4. Diagnose issues
-   whistle-cli captures find --host api.example.com
-   whistle-cli doctor https-capture
+   whistle-cli --format json captures find --host api.example.com
+   whistle-cli --format json doctor https-capture
 
 5. Handle blocked/error states
    -> Read error.suggested_fix and inform user
@@ -173,6 +186,9 @@ npm run build
 # Dev mode (tsx)
 npm run dev -- raw w2 status
 
+# Built binary
+node dist/cli/index.js --help
+
 # Test
 npm run test
 
@@ -196,6 +212,12 @@ npm run lint
 | `plugins/*` | Available |
 | `doctor/*` | Available |
 | `shortcuts/*` | Available |
+
+## Current Limitations (v1)
+
+- `captures diff` exists in command surface but currently returns `UNSUPPORTED_OPERATION`.
+- `captures tail` requires `--format ndjson`.
+- Certificate trust and some proxy setup steps may return `blocked` or `USER_ACTION_REQUIRED` and require manual OS actions.
 
 ## License
 
