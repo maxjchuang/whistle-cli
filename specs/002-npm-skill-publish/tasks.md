@@ -41,7 +41,7 @@
 - [ ] T005 Update package publish metadata for public npm distribution in `package.json` (`private`, `files`, `bin`, `engines`, `repository`, `keywords`)
 - [ ] T006 Add npm packaging sanity checks and scripts in `package.json` (`prepublishOnly`, `release:verify`, `release:dry-run`)
 - [ ] T007 Implement shared release check helpers in `scripts/release-lib.sh`
-- [ ] T008 Implement structured compatibility check helper for CLI/skill major versions in `scripts/check-compatibility.sh`
+- [ ] T008 Implement major-version compatibility validator for CLI/skill in `scripts/check-compatibility.sh` (define exit codes + concise mismatch message)
 - [ ] T009 [P] Add release verification record schema and sample output file in `specs/002-npm-skill-publish/contracts/release-verification-record.json`
 - [ ] T010 [P] Add CI-oriented usage docs for release scripts in `docs/release-workflow.md`
 
@@ -59,7 +59,7 @@
 
 - [ ] T011 [US1] Remove publish blocking flags and finalize package identity for public registry in `package.json`
 - [ ] T012 [US1] Add explicit package file whitelist and dist/runtime inclusion rules in `package.json`
-- [ ] T013 [US1] Implement end-to-end release verification flow (build/test/pack/install smoke) in `scripts/release-verify.sh`
+- [ ] T013 [US1] Implement end-to-end release verification flow (build/test/pack/install smoke + optional upgrade verification mode via `RELEASE_VERIFY_UPGRADE=1` + `RELEASE_VERIFY_FROM_VERSION=<semver>`; define stable exit codes) in `scripts/release-verify.sh`
 - [ ] T014 [P] [US1] Add dry-run publish helper command flow in `scripts/release-dry-run.sh`
 - [ ] T015 [US1] Add post-install smoke command checks in `scripts/release-verify.sh` for `whistle-cli --help` and `--format json instance status`
 - [ ] T016 [P] [US1] Document npm public install and upgrade instructions in `README.md`
@@ -99,10 +99,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] Implement major-version compatibility validator in `scripts/check-compatibility.sh`
+- [ ] T027 [US3] Finalize compatibility validator contract (inputs/outputs + messaging) and align it with `docs/release-workflow.md` + `skills/whistle-cli/README.md` (no new validator implementation beyond T008)
 - [ ] T028 [US3] Integrate compatibility gate into release verification pipeline in `scripts/release-verify.sh`
 - [ ] T029 [US3] Integrate compatibility gate into skill install helper in `scripts/install-skill.sh`
-- [ ] T030 [P] [US3] Add upgrade path documentation and compatibility matrix in `docs/release-workflow.md`
+- [ ] T030 [P] [US3] Add upgrade path documentation + compatibility matrix + how to run upgrade verification mode (`RELEASE_VERIFY_UPGRADE`, `RELEASE_VERIFY_FROM_VERSION`, expected exit codes) in `docs/release-workflow.md`
 - [ ] T031 [P] [US3] Add user-facing mismatch error examples and fixes in `skills/whistle-cli/README.md`
 - [ ] T032 [US3] Add automated tests for compatible and incompatible major-version combinations in `tests/integration/compatibility-gate.test.ts`
 - [ ] T033 [US3] Add release notes requirements for breaking changes and migration steps in `docs/release-notes-template.md`
