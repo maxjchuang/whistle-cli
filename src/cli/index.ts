@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { buildProgram } from './program';
 import { CliError } from '../output/errors';
 import { errorEnvelope } from '../output/result';

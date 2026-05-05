@@ -40,8 +40,12 @@ Validate that `whistle-cli` can be distributed via npm and consumed via installa
 ```bash
 npm run build
 npm run test
-npm pack
-npm publish --dry-run
+npm run release:verify
+npm run release:dry-run
+
+# Skill (agent)
+./scripts/install-skill.sh
+./scripts/verify-skill-install.sh
 
 # After publish (clean env)
 npm install -g whistle-cli@<version>

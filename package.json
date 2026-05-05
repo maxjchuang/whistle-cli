@@ -1,22 +1,45 @@
 {
   "name": "whistle-cli",
   "version": "0.1.0",
-  "private": true,
   "description": "AI-friendly CLI facade over Whistle",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maxjchuang/whistle-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/maxjchuang/whistle-cli/issues"
+  },
+  "homepage": "https://github.com/maxjchuang/whistle-cli#readme",
+  "keywords": [
+    "whistle",
+    "cli",
+    "proxy",
+    "automation",
+    "ai"
+  ],
   "engines": {
     "node": ">=20"
   },
+  "files": [
+    "dist/**"
+  ],
   "bin": {
     "whistle-cli": "dist/cli/index.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "./scripts/node ./node_modules/typescript/bin/tsc -p tsconfig.json",
+    "build": "./scripts/node ./node_modules/typescript/bin/tsc -p tsconfig.json && ./scripts/node -e \"const fs=require('fs');const p='dist/cli/index.js';let s=fs.readFileSync(p,'utf8');if(!s.startsWith('#!/usr/bin/env node\\n')){s='#!/usr/bin/env node\\n'+s;fs.writeFileSync(p,s,'utf8');}fs.chmodSync(p,0o755);\"",
     "dev": "./scripts/node ./node_modules/tsx/dist/cli.mjs src/cli/index.ts",
     "lint": "./scripts/node ./node_modules/eslint/bin/eslint.js .",
     "format": "./scripts/node ./node_modules/prettier/bin/prettier.cjs -w .",
     "test": "./scripts/node ./node_modules/vitest/vitest.mjs run",
-    "test:watch": "./scripts/node ./node_modules/vitest/vitest.mjs"
+    "test:watch": "./scripts/node ./node_modules/vitest/vitest.mjs",
+    "prepublishOnly": "npm run build",
+    "release:verify": "bash ./scripts/release-verify.sh",
+    "release:dry-run": "bash ./scripts/release-dry-run.sh"
   },
   "dependencies": {
     "commander": "^14.0.3",

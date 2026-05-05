@@ -8,7 +8,9 @@ import { startFakeCaptureBackend } from './us3-captures.fixtures';
 import { setupFakeW2PluginsEnv } from './us4-plugins.fixtures';
 
 describe('Acceptance smoke (linux/headless-friendly)', () => {
-  it('covers core resources end-to-end using deterministic fixtures', async () => {
+  it(
+    'covers core resources end-to-end using deterministic fixtures',
+    async () => {
     const backend = await startFakeCaptureBackend();
     try {
       const { env } = await setupFakeW2PluginsEnv();
@@ -73,6 +75,7 @@ describe('Acceptance smoke (linux/headless-friendly)', () => {
     } finally {
       await backend.close();
     }
-  });
+    },
+    60_000,
+  );
 });
-

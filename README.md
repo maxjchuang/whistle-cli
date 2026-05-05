@@ -10,13 +10,16 @@ AI-friendly CLI facade over [Whistle](https://github.com/avwo/whistle).
 ## Install
 
 ```bash
+# Install from npm (global)
+npm i -g whistle-cli
+
+# Upgrade
+npm i -g whistle-cli@latest
+
 # This repository (dev mode)
 npm install
 npm run dev -- --help
 ```
-
-> Note: this repo is currently configured as `"private": true` in `package.json`.
-> Publish/install from npm is not enabled by default.
 
 ## Quick Start
 
@@ -33,6 +36,15 @@ npm run dev -- --format json instance status
 # Human-readable output
 npm run dev -- --format pretty instance status
 ```
+
+## Skill (for AI agents)
+
+Install the repository-distributed skill into the default skills directory:
+
+```bash
+./scripts/install-skill.sh
+```
+
 
 ## Command Structure
 
