@@ -1,4 +1,6 @@
 import { Command } from 'commander';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { registerRawResource } from '../resources/raw';
 import { registerInstanceResource } from '../resources/instance';
 import { registerCertsResource } from '../resources/certs';
@@ -23,11 +25,23 @@ export interface GlobalOptions {
   nonInteractive?: boolean;
 }
 
+function getPackageVersion(): string {
+  try {
+    const pkgPath = path.resolve(__dirname, '../../package.json');
+    const pkgRaw = readFileSync(pkgPath, 'utf8');
+    const pkg = JSON.parse(pkgRaw) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
 export function buildProgram(): Command {
   const program = new Command();
 
   program.name('whistle-cli');
   program.description('AI-friendly CLI facade over Whistle');
+  program.version(getPackageVersion());
 
   program
     .option('--format <format>', 'Output format: json|pretty|table|ndjson', 'json')

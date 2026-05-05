@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-05-05T17:58:23Z",
+  "package": {
+    "name": "whistle-cli",
+    "version": "0.1.0"
+  },
+  "checks": [
+    {
+      "id": "build",
+      "status": "pass",
+      "notes": "npm run build"
+    },
+    {
+      "id": "test",
+      "status": "pass",
+      "notes": "npm run test"
+    },
+    {
+      "id": "pack_install_smoke",
+      "status": "pass",
+      "notes": "npm pack + install + run whistle-cli --help + instance status (JSON parse)"
+    },
+    {
+      "id": "skill_install_smoke",
+      "status": "pass",
+      "notes": "scripts/install-skill.sh + scripts/verify-skill-install.sh (tested via integration)"
+    }
+  ]
+}
