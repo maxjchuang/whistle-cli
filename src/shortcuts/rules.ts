@@ -168,6 +168,14 @@ export function registerRulesShortcuts(program: Command): void {
             apply: Boolean(cmdOpts.apply) || Boolean(cmdOpts.verify) || (!cmdOpts.preview && !cmdOpts.apply && !cmdOpts.verify),
           };
 
+          if (cmdOpts.verifyLive && !cmdOpts.runtimeDefault) {
+            throw new CliError({
+              code: 'UNSUPPORTED_OPERATION',
+              message: '--verify-live requires --runtime-default',
+              suggested_fix: 'Use --runtime-default to apply and verify runtime default rules, or remove --verify-live.',
+            });
+          }
+
           const payload = cmdOpts.ref?.trim() ? cmdOpts.ref.trim() : normalizeHeaderPairs(cmdOpts.header);
           const ruleLine = buildRuleLine(cmdOpts.match, `reqHeaders://${payload}`);
 
@@ -194,39 +202,62 @@ export function registerRulesShortcuts(program: Command): void {
               verificationInput = { header, equals, host };
             }
 
-            const current = await rules.getRuntimeDefaultRules(resolved.id);
-            const preview = pav.preview ? planRuntimeAppend(current.source_text, ruleLine) : undefined;
-            let runtime: Awaited<ReturnType<RulesService['applyRuntimeDefaultRules']>> | undefined;
-            let live_verification: Awaited<ReturnType<CapturesService['assertHeader']>> | undefined;
+            const result = await executor.execute(
+              { resource: 'rules', action, instance: resolved },
+              pav,
+              {
+                preview: async () => {
+                  const current = await rules.getRuntimeDefaultRules(resolved.id);
+                  return planRuntimeAppend(current.source_text, ruleLine);
+                },
+                apply: async () => {
+                  const before = await rules.getRuntimeDefaultRules(resolved.id);
+                  const next = planRuntimeAppend(before.source_text, ruleLine).next_source_text;
+                  const runtime = await rules.applyRuntimeDefaultRules(next, resolved.id, {
+                    verify: Boolean(cmdOpts.verify),
+                    selected: true,
+                  });
+                  const live_verification = verificationInput
+                    ? await captures.assertHeader(
+                        { instance_id: resolved.id, filters: { host: verificationInput.host }, limit: 200 },
+                        { header: verificationInput.header, equals: verificationInput.equals, durationMs: parseDurationMs(cmdOpts.duration) },
+                      )
+                    : undefined;
+                  return {
+                    result: { runtime, live_verification },
+                    rollback: {
+                      type: 'rules.default',
+                      prev_text: before.source_text,
+                      prev_disabled: before.disabled,
+                      instanceId: resolved.id,
+                    },
+                  };
+                },
+                verify: async () => rules.getRuntimeDefaultRules(resolved.id),
+              },
+            );
 
-            if (pav.apply) {
-              const next = preview?.next_source_text ?? planRuntimeAppend(current.source_text, ruleLine).next_source_text;
-              runtime = await rules.applyRuntimeDefaultRules(next, resolved.id, {
-                verify: Boolean(cmdOpts.verify),
-                selected: true,
-              });
-            }
-
-            if (pav.apply && verificationInput) {
-              live_verification = await captures.assertHeader(
-                { instance_id: resolved.id, filters: { host: verificationInput.host }, limit: 200 },
-                { header: verificationInput.header, equals: verificationInput.equals, durationMs: parseDurationMs(cmdOpts.duration) },
-              );
-            }
+            const live_verification = result.apply_result?.live_verification;
 
             process.stdout.write(
               renderEnvelope(
                 okEnvelope(
                   'rules',
                   action,
-                  { preview, runtime, live_verification },
+                  { preview: result.preview, runtime: result.apply_result?.runtime, live_verification },
                   {
                     instance: resolved,
                     effective: pav.apply && (!live_verification || live_verification.classification === 'OK'),
-                    meta: { preview: pav.preview, verified: Boolean(cmdOpts.verify), live_verified: Boolean(live_verification) } as {
+                    meta: {
+                      preview: pav.preview,
+                      verified: Boolean(cmdOpts.verify),
+                      live_verified: Boolean(live_verification),
+                      action_id: result.action_id,
+                    } as {
                       preview: boolean;
                       verified: boolean;
                       live_verified: boolean;
+                      action_id: string;
                     },
                   },
                 ),
