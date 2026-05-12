@@ -161,7 +161,7 @@ export function summarizeHeaderAssertion(records: CaptureRecord[], opts: HeaderA
     overridden,
     miss,
     no_traffic: false,
-    classification: overridden || miss ? 'OVERRIDDEN' : 'OK',
+    classification: overridden > 0 ? 'OVERRIDDEN' : miss > 0 ? 'MISS' : 'OK',
     events,
     examples: events.filter((e) => e.classification !== 'OK').slice(0, 5),
   };

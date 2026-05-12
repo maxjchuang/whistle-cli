@@ -16,12 +16,45 @@ function rec(headers?: Record<string, string>): CaptureRecord {
 }
 
 describe('header assertion classification', () => {
-  it('classifies ok, overridden, miss, and no traffic', () => {
+  it('classifies individual records as ok, overridden, and miss', () => {
     expect(classifyHeaderRecord(rec({ 'x-env': 'staging' }), 'x-env', 'staging').classification).toBe('OK');
     expect(classifyHeaderRecord(rec({ 'x-env': 'other' }), 'x-env', 'staging').classification).toBe('OVERRIDDEN');
     expect(classifyHeaderRecord(rec({}), 'x-env', 'staging').classification).toBe('MISS');
+  });
 
+  it('summarizes ok traffic', () => {
+    const summary = summarizeHeaderAssertion([rec({ 'x-env': 'staging' })], { header: 'x-env', equals: 'staging' });
+
+    expect(summary.classification).toBe('OK');
+    expect(summary.ok).toBe(1);
+    expect(summary.overridden).toBe(0);
+    expect(summary.miss).toBe(0);
+  });
+
+  it('summarizes overridden traffic when any header value differs', () => {
+    const summary = summarizeHeaderAssertion([rec({ 'x-env': 'staging' }), rec({ 'x-env': 'prod' }), rec({})], {
+      header: 'x-env',
+      equals: 'staging',
+    });
+
+    expect(summary.classification).toBe('OVERRIDDEN');
+    expect(summary.ok).toBe(1);
+    expect(summary.overridden).toBe(1);
+    expect(summary.miss).toBe(1);
+  });
+
+  it('summarizes missing header traffic as miss when no value was overridden', () => {
+    const summary = summarizeHeaderAssertion([rec({}), rec({ 'x-other': 'staging' })], { header: 'x-env', equals: 'staging' });
+
+    expect(summary.classification).toBe('MISS');
+    expect(summary.ok).toBe(0);
+    expect(summary.overridden).toBe(0);
+    expect(summary.miss).toBe(2);
+  });
+
+  it('summarizes no traffic', () => {
     const summary = summarizeHeaderAssertion([], { header: 'x-env', equals: 'staging' });
+
     expect(summary.classification).toBe('NO_TRAFFIC');
     expect(summary.no_traffic).toBe(true);
   });
