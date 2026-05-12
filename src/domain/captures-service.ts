@@ -1,6 +1,8 @@
 import { InstanceService } from './instance-service';
 import { loadConfig } from '../shared/config';
 import { RuntimeClient } from '../backends/runtime/runtime-client';
+import { WhistleWebClient } from '../backends/whistle-web';
+import { CliError } from '../output/errors';
 import type { CaptureQuery, CaptureRecord } from './captures-model';
 
 function normalizeLimit(n: unknown): number {
@@ -13,6 +15,77 @@ function parseProtocol(v: unknown): CaptureRecord['protocol'] {
   const s = String(v ?? '').toLowerCase();
   if (s === 'http' || s === 'https' || s === 'http2' || s === 'websocket' || s === 'tcp' || s === 'tunnel') return s;
   return 'unknown';
+}
+
+function parseProtocolFromUrl(url: string | undefined): CaptureRecord['protocol'] {
+  if (!url) return 'unknown';
+  try {
+    const protocol = new URL(url).protocol.replace(/:$/, '');
+    return parseProtocol(protocol);
+  } catch {
+    return 'unknown';
+  }
+}
+
+function normalizeRuntimeCapture(raw: any, instanceId: string): CaptureRecord {
+  const capture_id = String(raw.capture_id ?? raw.id ?? raw.sessionId ?? raw.reqId ?? '');
+  return {
+    capture_id: capture_id || `cap_${Math.random().toString(16).slice(2)}`,
+    instance_id: instanceId,
+    backend: 'runtime',
+    protocol: parseProtocol(raw.protocol ?? raw.proto ?? raw.type),
+    method: raw.method ? String(raw.method) : undefined,
+    url: raw.url ? String(raw.url) : undefined,
+    host: raw.host ? String(raw.host) : undefined,
+    path: raw.path ? String(raw.path) : undefined,
+    status_code:
+      typeof raw.status_code === 'number' ? raw.status_code : typeof raw.statusCode === 'number' ? raw.statusCode : undefined,
+  };
+}
+
+export function normalizeWhistleWebCapture(raw: any, instanceId: string): CaptureRecord {
+  const url = raw?.url ? String(raw.url) : undefined;
+  let parsedUrl: URL | undefined;
+  if (url) {
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      parsedUrl = undefined;
+    }
+  }
+
+  const headers = raw?.req?.headers && typeof raw.req.headers === 'object' ? raw.req.headers : {};
+  const request_headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    request_headers[key.toLowerCase()] = Array.isArray(value) ? value.map(String).join(', ') : String(value);
+  }
+
+  const matchedRules: Record<string, unknown> = {};
+  if (raw?.rules !== undefined) matchedRules.rules = raw.rules;
+  if (raw?.rulesHeaders !== undefined) matchedRules.rulesHeaders = raw.rulesHeaders;
+
+  return {
+    capture_id: String(raw?.id ?? raw?.capture_id ?? raw?.reqId ?? ''),
+    instance_id: instanceId,
+    backend: 'whistle-web',
+    protocol: parsedUrl ? parseProtocol(parsedUrl.protocol.replace(/:$/, '')) : parseProtocolFromUrl(url),
+    method: raw?.req?.method ? String(raw.req.method) : undefined,
+    url,
+    host: parsedUrl?.host ?? request_headers.host,
+    path: parsedUrl ? `${parsedUrl.pathname}${parsedUrl.search}` : undefined,
+    status_code:
+      typeof raw?.res?.statusCode === 'number'
+        ? raw.res.statusCode
+        : typeof raw?.res?.status_code === 'number'
+          ? raw.res.status_code
+          : typeof raw?.status_code === 'number'
+            ? raw.status_code
+            : typeof raw?.statusCode === 'number'
+              ? raw.statusCode
+              : undefined,
+    request_headers: Object.keys(request_headers).length ? request_headers : undefined,
+    matched_rules: Object.keys(matchedRules).length ? matchedRules : undefined,
+  };
 }
 
 export class CapturesService {
@@ -33,7 +106,17 @@ export class CapturesService {
     return new RuntimeClient({ baseUrl });
   }
 
-  async find(query: CaptureQuery): Promise<{
+  private async whistleWebClientForInstance(instanceId: string): Promise<WhistleWebClient> {
+    const cfg = loadConfig();
+    if (cfg.runtimeUrl) {
+      return new WhistleWebClient({ baseUrl: cfg.runtimeUrl });
+    }
+    const st = await this.instances.status(instanceId);
+    const baseUrl = `http://${st.host}:${st.port}`;
+    return new WhistleWebClient({ baseUrl });
+  }
+
+  private buildFindResult(query: CaptureQuery, items: CaptureRecord[]): {
     filters: CaptureQuery['filters'];
     count: number;
     items: CaptureRecord[];
@@ -42,29 +125,7 @@ export class CapturesService {
       status_codes: Array<{ status_code: number; count: number }>;
       protocols: Array<{ protocol: CaptureRecord['protocol']; count: number }>;
     };
-  }> {
-    const client = await this.runtimeClientForInstance(query.instance_id);
-    const limit = normalizeLimit(query.limit);
-    const res = await client.findCaptures({
-      ...query.filters,
-      limit,
-    });
-
-    const rawItems = Array.isArray((res as any).items) ? ((res as any).items as any[]) : [];
-    const items: CaptureRecord[] = rawItems.map((r) => {
-      const capture_id = String(r.capture_id ?? r.id ?? r.sessionId ?? r.reqId ?? '');
-      return {
-        capture_id: capture_id || `cap_${Math.random().toString(16).slice(2)}`,
-        instance_id: query.instance_id,
-        protocol: parseProtocol(r.protocol ?? r.proto ?? r.type),
-        method: r.method ? String(r.method) : undefined,
-        url: r.url ? String(r.url) : undefined,
-        host: r.host ? String(r.host) : undefined,
-        path: r.path ? String(r.path) : undefined,
-        status_code: typeof r.status_code === 'number' ? r.status_code : typeof r.statusCode === 'number' ? r.statusCode : undefined,
-      };
-    });
-
+  } {
     const hostCount = new Map<string, number>();
     const statusCount = new Map<number, number>();
     const protoCount = new Map<CaptureRecord['protocol'], number>();
@@ -94,6 +155,68 @@ export class CapturesService {
     return { filters: query.filters, count: items.length, items, analysis };
   }
 
+  private async findViaWhistleWeb(query: CaptureQuery, limit: number): Promise<ReturnType<CapturesService['buildFindResult']>> {
+    const client = await this.whistleWebClientForInstance(query.instance_id);
+    const res = await client.getData({ startTime: 0, dumpCount: limit });
+    const rawItems = Object.values(res.data?.data ?? {});
+    const filters = query.filters;
+    const items = rawItems
+      .map((r) => normalizeWhistleWebCapture(r, query.instance_id))
+      .filter((item) => {
+        if (filters.host && item.host !== filters.host) return false;
+        if (filters.path && !String(item.path ?? '').includes(filters.path)) return false;
+        if (filters.method && String(item.method ?? '').toLowerCase() !== filters.method.toLowerCase()) return false;
+        if (typeof filters.status === 'number' && item.status_code !== filters.status) return false;
+        if (filters.keyword && !JSON.stringify(item).includes(filters.keyword)) return false;
+        return true;
+      })
+      .slice(0, limit);
+    return this.buildFindResult(query, items);
+  }
+
+  async find(query: CaptureQuery): Promise<{
+    filters: CaptureQuery['filters'];
+    count: number;
+    items: CaptureRecord[];
+    analysis?: {
+      top_hosts: Array<{ host: string; count: number }>;
+      status_codes: Array<{ status_code: number; count: number }>;
+      protocols: Array<{ protocol: CaptureRecord['protocol']; count: number }>;
+    };
+  }> {
+    const limit = normalizeLimit(query.limit);
+    const backend = query.backend ?? 'auto';
+    if (backend === 'auto' || backend === 'whistle-web') {
+      return await this.findViaWhistleWeb(query, limit);
+    }
+
+    let res: { items?: unknown[] };
+    try {
+      const client = await this.runtimeClientForInstance(query.instance_id);
+      res = await client.findCaptures({
+        ...query.filters,
+        limit,
+      });
+    } catch (e) {
+      if (backend === 'runtime' && e instanceof CliError && e.details.code === 'CAPTURE_BACKEND_UNAVAILABLE') {
+        throw new CliError(
+          {
+            code: 'RUNTIME_BACKEND_UNAVAILABLE',
+            message: 'Runtime capture backend is not available',
+            reason: e.details.reason,
+            suggested_fix: 'Use the default Whistle Web backend, or start a backend that supports the whistle-cli runtime API.',
+          },
+          e,
+        );
+      }
+      throw e;
+    }
+
+    const rawItems = Array.isArray((res as any).items) ? ((res as any).items as any[]) : [];
+    const items = rawItems.map((r) => normalizeRuntimeCapture(r, query.instance_id));
+    return this.buildFindResult(query, items);
+  }
+
   async get(instanceId: string, captureId: string): Promise<CaptureRecord> {
     const client = await this.runtimeClientForInstance(instanceId);
     const res = await client.getCapture(captureId);
@@ -101,6 +224,7 @@ export class CapturesService {
     return {
       capture_id: String(item.capture_id ?? item.id ?? captureId),
       instance_id: instanceId,
+      backend: 'runtime',
       protocol: parseProtocol(item.protocol ?? item.proto ?? item.type),
       method: item.method ? String(item.method) : undefined,
       url: item.url ? String(item.url) : undefined,
@@ -131,6 +255,7 @@ export class CapturesService {
       yield {
         capture_id: capture_id || `cap_${Math.random().toString(16).slice(2)}`,
         instance_id: query.instance_id,
+        backend: 'runtime',
         protocol: parseProtocol((r as any).protocol ?? (r as any).proto ?? (r as any).type),
         method: (r as any).method ? String((r as any).method) : undefined,
         url: (r as any).url ? String((r as any).url) : undefined,

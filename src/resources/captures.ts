@@ -19,6 +19,7 @@ export function registerCapturesResource(program: Command): void {
     .option('--status <status>', 'Filter by status code')
     .option('--keyword <keyword>', 'Search keyword')
     .option('--limit <n>', 'Max items', '30')
+    .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
     .action(async (cmdOpts: any) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
@@ -34,7 +35,7 @@ export function registerCapturesResource(program: Command): void {
           keyword: cmdOpts.keyword ? String(cmdOpts.keyword) : undefined,
         };
         const limit = Number(cmdOpts.limit ?? 30);
-        const out = await service.find({ instance_id: resolved.id, filters, limit });
+        const out = await service.find({ instance_id: resolved.id, filters, limit, backend: cmdOpts.backend });
         process.stdout.write(renderEnvelope(okEnvelope('captures', action, out, { instance: resolved, effective: true }), format));
       } catch (e) {
         const err = CliError.fromUnknown(e);
@@ -47,6 +48,7 @@ export function registerCapturesResource(program: Command): void {
     .command('get')
     .description('Get a single capture record')
     .requiredOption('--id <id>', 'Capture id')
+    .option('--backend <backend>', 'Capture backend: runtime', 'runtime')
     .action(async (cmdOpts: { id: string }) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
@@ -71,6 +73,7 @@ export function registerCapturesResource(program: Command): void {
     .option('--status <status>', 'Filter by status code')
     .option('--keyword <keyword>', 'Search keyword')
     .option('--limit <n>', 'Max events before ending (for safety)', '20')
+    .option('--backend <backend>', 'Capture backend: runtime', 'runtime')
     .action(async (cmdOpts: any) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
@@ -100,7 +103,7 @@ export function registerCapturesResource(program: Command): void {
 
       let count = 0;
       try {
-        for await (const item of service.tail({ instance_id: resolved.id, filters, limit: max })) {
+        for await (const item of service.tail({ instance_id: resolved.id, filters, limit: max, backend: cmdOpts.backend })) {
           const env = okEnvelope('captures', action, item, {
             instance: resolved,
             effective: true,
@@ -149,6 +152,7 @@ export function registerCapturesResource(program: Command): void {
     .option('--keyword <keyword>', 'Search keyword')
     .option('--limit <n>', 'Max items', '200')
     .option('--export-format <fmt>', 'Export format: har|json', 'json')
+    .option('--backend <backend>', 'Capture backend: runtime', 'runtime')
     .action(async (cmdOpts: any) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
@@ -165,7 +169,7 @@ export function registerCapturesResource(program: Command): void {
         };
         const limit = Number(cmdOpts.limit ?? 200);
         const export_format = cmdOpts.exportFormat === 'har' ? 'har' : 'json';
-        const out = await service.export({ instance_id: resolved.id, filters, limit, export_format });
+        const out = await service.export({ instance_id: resolved.id, filters, limit, export_format, backend: cmdOpts.backend });
         process.stdout.write(renderEnvelope(okEnvelope('captures', action, out, { instance: resolved, effective: true }), format));
       } catch (e) {
         const err = CliError.fromUnknown(e);

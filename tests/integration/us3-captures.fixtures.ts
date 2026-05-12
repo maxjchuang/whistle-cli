@@ -136,6 +136,26 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
       return;
     }
 
+    if (u.pathname === '/cgi-bin/get-data') {
+      const data = {
+        n1: {
+          id: 'n1',
+          startTime: 1700000000000,
+          url: 'https://example.com/api/ok',
+          req: {
+            method: 'GET',
+            headers: { host: 'example.com', 'x-env': 'staging' },
+          },
+          res: { statusCode: 200 },
+          rules: { rule: { matcher: 'example.com', raw: 'example.com reqHeaders://x-env=staging' } },
+          rulesHeaders: {},
+        },
+      };
+      res.statusCode = 200;
+      res.end(JSON.stringify({ ec: 0, data: { data, newIds: Object.keys(data) } }));
+      return;
+    }
+
     if (u.pathname === '/__whistle_cli__/captures/find') {
       const keyword = u.searchParams.get('keyword') ?? '';
       const host = u.searchParams.get('host') ?? '';

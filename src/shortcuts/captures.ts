@@ -18,6 +18,7 @@ export function registerCapturesShortcuts(program: Command): void {
     .option('--status <status>', 'Filter by status code')
     .option('--keyword <keyword>', 'Search keyword')
     .option('--limit <n>', 'Max items', '30')
+    .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
     .action(async (cmdOpts: any) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
@@ -32,7 +33,7 @@ export function registerCapturesShortcuts(program: Command): void {
           keyword: cmdOpts.keyword ? String(cmdOpts.keyword) : undefined,
         };
         const limit = Number(cmdOpts.limit ?? 30);
-        const out = await service.find({ instance_id: resolved.id, filters, limit });
+        const out = await service.find({ instance_id: resolved.id, filters, limit, backend: cmdOpts.backend });
         process.stdout.write(renderEnvelope(okEnvelope('captures', action, out, { instance: resolved, effective: true }), format));
       } catch (e) {
         const err = CliError.fromUnknown(e);
@@ -48,6 +49,7 @@ export function registerCapturesShortcuts(program: Command): void {
     .option('--keyword <keyword>', 'Search keyword')
     .option('--status <status>', 'Status code (default: 500)', '500')
     .option('--limit <n>', 'Max items', '30')
+    .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
     .action(async (cmdOpts: any) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
@@ -60,7 +62,7 @@ export function registerCapturesShortcuts(program: Command): void {
           status: Number(cmdOpts.status ?? 500),
         };
         const limit = Number(cmdOpts.limit ?? 30);
-        const out = await service.find({ instance_id: resolved.id, filters, limit });
+        const out = await service.find({ instance_id: resolved.id, filters, limit, backend: cmdOpts.backend });
         process.stdout.write(renderEnvelope(okEnvelope('captures', action, out, { instance: resolved, effective: true }), format));
       } catch (e) {
         const err = CliError.fromUnknown(e);
@@ -69,4 +71,3 @@ export function registerCapturesShortcuts(program: Command): void {
       }
     });
 }
-
