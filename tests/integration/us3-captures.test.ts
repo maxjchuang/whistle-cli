@@ -40,7 +40,7 @@ describe('US3 captures (integration)', () => {
 
   it('captures find uses Whistle Web API by default when runtime routes are absent', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
-    const backend = await startFakeCaptureBackend();
+    const backend = await startFakeCaptureBackend({ disableCaptureRuntimeRoutes: true });
     try {
       const res = await runCli(['--instance', 'dummy', 'captures', 'find', '--host', 'example.com', '--format', 'json'], {
         env: {
@@ -52,6 +52,95 @@ describe('US3 captures (integration)', () => {
       expect(res.stdout).toContain('"backend":"whistle-web"');
       expect(res.stdout).toContain('"request_headers"');
       expect(res.stdout).toContain('"x-env":"staging"');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures find filters after reading a larger native session window', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      nativeCaptureData: {
+        other: {
+          id: 'other',
+          url: 'https://other.example/api/nope',
+          req: { method: 'GET', headers: { host: 'other.example' } },
+          res: { statusCode: 200 },
+        },
+        native_key_only: {
+          url: 'https://example.com/api/late',
+          req: { method: 'GET', headers: { host: 'example.com' } },
+          res: { statusCode: 200 },
+        },
+      },
+    });
+    try {
+      const res = await runCli(['--instance', 'dummy', 'captures', 'find', '--host', 'example.com', '--limit', '1', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(res.exitCode).toBe(0);
+      expect(res.stdout).toContain('"count":1');
+      expect(res.stdout).toContain('"capture_id":"native_key_only"');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures find --backend runtime fails when runtime routes are absent', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({ disableCaptureRuntimeRoutes: true });
+    try {
+      const res = await runCli(['--instance', 'dummy', 'captures', 'find', '--backend', 'runtime', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(res.exitCode).not.toBe(0);
+      expect(res.stderr).toContain('"code":"RUNTIME_BACKEND_UNAVAILABLE"');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures find rejects invalid backend values', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend();
+    try {
+      const res = await runCli(['--instance', 'dummy', 'captures', 'find', '--backend', 'bad', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(res.exitCode).not.toBe(0);
+      expect(res.stderr).toContain('"code":"UNSUPPORTED_OPERATION"');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('runtime-only capture commands reject non-runtime backend values', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend();
+    try {
+      for (const args of [
+        ['captures', 'get', '--id', 'cap_1', '--backend', 'whistle-web', '--format', 'json'],
+        ['captures', 'export', '--backend', 'whistle-web', '--format', 'json'],
+        ['captures', 'tail', '--backend', 'whistle-web', '--format', 'ndjson'],
+      ]) {
+        const res = await runCli(['--instance', 'dummy', ...args], {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        });
+        expect(res.exitCode).not.toBe(0);
+        expect(res.stderr).toContain('"code":"UNSUPPORTED_OPERATION"');
+      }
     } finally {
       await backend.close();
     }

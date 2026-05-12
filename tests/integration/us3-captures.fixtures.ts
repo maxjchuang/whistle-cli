@@ -12,6 +12,8 @@ export interface FakeCaptureBackendOptions {
   ignoreDefaultStateChange?: boolean;
   failRestoreAfterMismatch?: boolean;
   failDefaultStateToggleAfterAdd?: boolean;
+  disableCaptureRuntimeRoutes?: boolean;
+  nativeCaptureData?: Record<string, any>;
 }
 
 export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions): Promise<FakeCaptureBackend> {
@@ -137,7 +139,7 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
     }
 
     if (u.pathname === '/cgi-bin/get-data') {
-      const data = {
+      const defaultData = {
         n1: {
           id: 'n1',
           startTime: 1700000000000,
@@ -151,12 +153,15 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
           rulesHeaders: {},
         },
       };
+      const dumpCount = Number(u.searchParams.get('dumpCount') ?? '');
+      const entries = Object.entries(opts?.nativeCaptureData ?? defaultData);
+      const data = Object.fromEntries(Number.isFinite(dumpCount) && dumpCount > 0 ? entries.slice(0, dumpCount) : entries);
       res.statusCode = 200;
       res.end(JSON.stringify({ ec: 0, data: { data, newIds: Object.keys(data) } }));
       return;
     }
 
-    if (u.pathname === '/__whistle_cli__/captures/find') {
+    if (!opts?.disableCaptureRuntimeRoutes && u.pathname === '/__whistle_cli__/captures/find') {
       const keyword = u.searchParams.get('keyword') ?? '';
       const host = u.searchParams.get('host') ?? '';
       const method = u.searchParams.get('method') ?? '';
@@ -194,13 +199,13 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
       return;
     }
 
-    if (u.pathname === '/__whistle_cli__/captures/export') {
+    if (!opts?.disableCaptureRuntimeRoutes && u.pathname === '/__whistle_cli__/captures/export') {
       res.statusCode = 200;
       res.end(JSON.stringify({ exported: true, file_path: '/tmp/captures.json' }));
       return;
     }
 
-    if (u.pathname === '/__whistle_cli__/captures/tail') {
+    if (!opts?.disableCaptureRuntimeRoutes && u.pathname === '/__whistle_cli__/captures/tail') {
       res.statusCode = 200;
       res.setHeader('content-type', 'application/x-ndjson; charset=utf-8');
       const items = [
@@ -274,7 +279,7 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
       return;
     }
 
-    if (u.pathname === '/__whistle_cli__/captures/get') {
+    if (!opts?.disableCaptureRuntimeRoutes && u.pathname === '/__whistle_cli__/captures/get') {
       const id = u.searchParams.get('id') ?? 'unknown';
       res.statusCode = 200;
       res.end(

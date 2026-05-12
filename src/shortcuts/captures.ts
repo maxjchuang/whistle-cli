@@ -5,6 +5,15 @@ import { errorEnvelope, okEnvelope } from '../output/result';
 import { renderEnvelope } from '../output/renderers';
 import { CapturesService } from '../domain/captures-service';
 
+function assertFindBackend(backend: unknown): 'auto' | 'whistle-web' | 'runtime' {
+  if (backend === 'auto' || backend === 'whistle-web' || backend === 'runtime') return backend;
+  throw new CliError({
+    code: 'UNSUPPORTED_OPERATION',
+    message: `Unsupported capture backend: ${String(backend)}`,
+    suggested_fix: 'Use one of: auto, whistle-web, runtime.',
+  });
+}
+
 export function registerCapturesShortcuts(program: Command): void {
   const capture = program.command('capture').description('AI-friendly capture shortcuts');
   const service = new CapturesService();
@@ -33,7 +42,8 @@ export function registerCapturesShortcuts(program: Command): void {
           keyword: cmdOpts.keyword ? String(cmdOpts.keyword) : undefined,
         };
         const limit = Number(cmdOpts.limit ?? 30);
-        const out = await service.find({ instance_id: resolved.id, filters, limit, backend: cmdOpts.backend });
+        const backend = assertFindBackend(cmdOpts.backend);
+        const out = await service.find({ instance_id: resolved.id, filters, limit, backend });
         process.stdout.write(renderEnvelope(okEnvelope('captures', action, out, { instance: resolved, effective: true }), format));
       } catch (e) {
         const err = CliError.fromUnknown(e);
@@ -62,7 +72,8 @@ export function registerCapturesShortcuts(program: Command): void {
           status: Number(cmdOpts.status ?? 500),
         };
         const limit = Number(cmdOpts.limit ?? 30);
-        const out = await service.find({ instance_id: resolved.id, filters, limit, backend: cmdOpts.backend });
+        const backend = assertFindBackend(cmdOpts.backend);
+        const out = await service.find({ instance_id: resolved.id, filters, limit, backend });
         process.stdout.write(renderEnvelope(okEnvelope('captures', action, out, { instance: resolved, effective: true }), format));
       } catch (e) {
         const err = CliError.fromUnknown(e);

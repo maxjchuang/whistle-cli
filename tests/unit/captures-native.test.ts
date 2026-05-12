@@ -22,4 +22,19 @@ describe('native capture normalization', () => {
     expect(record.status_code).toBe(201);
     expect(record.request_headers?.['x-env']).toBe('staging');
   });
+
+  it('uses the session map key as a fallback capture id and normalizes websocket protocols', () => {
+    const record = normalizeWhistleWebCapture(
+      {
+        url: 'wss://example.com/socket',
+        req: { method: 'GET', headers: { Host: 'example.com' } },
+        res: { statusCode: 101 },
+      },
+      'default',
+      'session-key',
+    );
+
+    expect(record.capture_id).toBe('session-key');
+    expect(record.protocol).toBe('websocket');
+  });
 });

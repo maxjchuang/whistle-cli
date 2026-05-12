@@ -13,6 +13,7 @@ function normalizeLimit(n: unknown): number {
 
 function parseProtocol(v: unknown): CaptureRecord['protocol'] {
   const s = String(v ?? '').toLowerCase();
+  if (s === 'ws' || s === 'wss') return 'websocket';
   if (s === 'http' || s === 'https' || s === 'http2' || s === 'websocket' || s === 'tcp' || s === 'tunnel') return s;
   return 'unknown';
 }
@@ -43,7 +44,7 @@ function normalizeRuntimeCapture(raw: any, instanceId: string): CaptureRecord {
   };
 }
 
-export function normalizeWhistleWebCapture(raw: any, instanceId: string): CaptureRecord {
+export function normalizeWhistleWebCapture(raw: any, instanceId: string, fallbackId?: string): CaptureRecord {
   const url = raw?.url ? String(raw.url) : undefined;
   let parsedUrl: URL | undefined;
   if (url) {
@@ -65,7 +66,7 @@ export function normalizeWhistleWebCapture(raw: any, instanceId: string): Captur
   if (raw?.rulesHeaders !== undefined) matchedRules.rulesHeaders = raw.rulesHeaders;
 
   return {
-    capture_id: String(raw?.id ?? raw?.capture_id ?? raw?.reqId ?? ''),
+    capture_id: String(raw?.id ?? raw?.capture_id ?? raw?.reqId ?? fallbackId ?? `cap_${Math.random().toString(16).slice(2)}`),
     instance_id: instanceId,
     backend: 'whistle-web',
     protocol: parsedUrl ? parseProtocol(parsedUrl.protocol.replace(/:$/, '')) : parseProtocolFromUrl(url),
@@ -157,11 +158,12 @@ export class CapturesService {
 
   private async findViaWhistleWeb(query: CaptureQuery, limit: number): Promise<ReturnType<CapturesService['buildFindResult']>> {
     const client = await this.whistleWebClientForInstance(query.instance_id);
-    const res = await client.getData({ startTime: 0, dumpCount: limit });
-    const rawItems = Object.values(res.data?.data ?? {});
+    const dumpCount = Math.min(Math.max(limit * 5, 100), 1000);
+    const res = await client.getData({ startTime: 0, dumpCount });
+    const rawItems = Object.entries(res.data?.data ?? {});
     const filters = query.filters;
     const items = rawItems
-      .map((r) => normalizeWhistleWebCapture(r, query.instance_id))
+      .map(([id, r]) => normalizeWhistleWebCapture(r, query.instance_id, id))
       .filter((item) => {
         if (filters.host && item.host !== filters.host) return false;
         if (filters.path && !String(item.path ?? '').includes(filters.path)) return false;
@@ -186,6 +188,13 @@ export class CapturesService {
   }> {
     const limit = normalizeLimit(query.limit);
     const backend = query.backend ?? 'auto';
+    if (backend !== 'auto' && backend !== 'whistle-web' && backend !== 'runtime') {
+      throw new CliError({
+        code: 'UNSUPPORTED_OPERATION',
+        message: `Unsupported capture backend: ${backend}`,
+        suggested_fix: 'Use one of: auto, whistle-web, runtime.',
+      });
+    }
     if (backend === 'auto' || backend === 'whistle-web') {
       return await this.findViaWhistleWeb(query, limit);
     }
