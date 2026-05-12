@@ -73,6 +73,7 @@ whistle-cli rule set-header \
   --match '/^https:\/\/app\.example\.com\//' \
   --header env=pre_release \
   --apply \
+  --runtime-default \
   --verify-live \
   --duration 60s \
   --format json

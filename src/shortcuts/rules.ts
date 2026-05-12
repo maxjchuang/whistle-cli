@@ -9,7 +9,11 @@ import { CapturesService } from '../domain/captures-service';
 
 function parseDurationMs(input: unknown): number {
   const raw = String(input ?? '60s').trim();
-  const parsed = raw.endsWith('ms') ? Number(raw.slice(0, -2)) : raw.endsWith('s') ? Number(raw.slice(0, -1)) * 1000 : Number(raw) * 1000;
+  const parsed = raw.endsWith('ms')
+    ? Number(raw.slice(0, -2))
+    : raw.endsWith('s')
+      ? Number(raw.slice(0, -1)) * 1000
+      : Number(raw) * 1000;
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 60_000;
 }
 
@@ -71,7 +75,10 @@ function hostFromMatch(match: string): string | undefined {
   return host || undefined;
 }
 
-function planRuntimeAppend(currentSourceText: string, ruleLine: string): {
+function planRuntimeAppend(
+  currentSourceText: string,
+  ruleLine: string,
+): {
   backend: 'whistle-web';
   append: string;
   next_source_text: string;
@@ -131,12 +138,24 @@ export function registerRulesShortcuts(program: Command): void {
     .command('set-header')
     .description('Shortcut: append a reqHeaders rule')
     .requiredOption('--match <pattern>', 'Rule matcher pattern (e.g. www.example.com/api)')
-    .option('--target <ruleset>', 'Target rule set id or name (default: whistle-cli)', 'whistle-cli')
-    .option('--header <k=v>', 'Header pair, repeatable', (v, acc: string[]) => {
-      acc.push(v);
-      return acc;
-    }, [])
-    .option('--ref <ref>', 'Use a Values key or file/url reference for reqHeaders payload (e.g. {k} or /abs/path.json)')
+    .option(
+      '--target <ruleset>',
+      'Target rule set id or name (default: whistle-cli)',
+      'whistle-cli',
+    )
+    .option(
+      '--header <k=v>',
+      'Header pair, repeatable',
+      (v, acc: string[]) => {
+        acc.push(v);
+        return acc;
+      },
+      [],
+    )
+    .option(
+      '--ref <ref>',
+      'Use a Values key or file/url reference for reqHeaders payload (e.g. {k} or /abs/path.json)',
+    )
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
@@ -165,18 +184,26 @@ export function registerRulesShortcuts(program: Command): void {
           const pav = {
             preview: Boolean(cmdOpts.preview),
             verify: Boolean(cmdOpts.verify),
-            apply: Boolean(cmdOpts.apply) || Boolean(cmdOpts.verify) || (!cmdOpts.preview && !cmdOpts.apply && !cmdOpts.verify),
+            apply:
+              Boolean(cmdOpts.apply) ||
+              Boolean(cmdOpts.verify) ||
+              (!cmdOpts.preview && !cmdOpts.apply && !cmdOpts.verify),
           };
+          const runtimeVerify =
+            Boolean(cmdOpts.verify) || (Boolean(cmdOpts.verifyLive) && pav.apply);
 
           if (cmdOpts.verifyLive && !cmdOpts.runtimeDefault) {
             throw new CliError({
               code: 'UNSUPPORTED_OPERATION',
               message: '--verify-live requires --runtime-default',
-              suggested_fix: 'Use --runtime-default to apply and verify runtime default rules, or remove --verify-live.',
+              suggested_fix:
+                'Use --runtime-default to apply and verify runtime default rules, or remove --verify-live.',
             });
           }
 
-          const payload = cmdOpts.ref?.trim() ? cmdOpts.ref.trim() : normalizeHeaderPairs(cmdOpts.header);
+          const payload = cmdOpts.ref?.trim()
+            ? cmdOpts.ref.trim()
+            : normalizeHeaderPairs(cmdOpts.header);
           const ruleLine = buildRuleLine(cmdOpts.match, `reqHeaders://${payload}`);
 
           if (cmdOpts.runtimeDefault) {
@@ -196,7 +223,8 @@ export function registerRulesShortcuts(program: Command): void {
                   code: 'UNSUPPORTED_OPERATION',
                   message: 'Unable to derive host from --match for live verification',
                   reason: `Match pattern: ${cmdOpts.match}`,
-                  suggested_fix: 'Use a matcher that includes an http(s) host, such as /^https:\\/\\/example\\.com\\//.',
+                  suggested_fix:
+                    'Use a matcher that includes an http(s) host, such as /^https:\\/\\/example\\.com\\//.',
                 });
               }
               verificationInput = { header, equals, host };
@@ -214,7 +242,7 @@ export function registerRulesShortcuts(program: Command): void {
                   const before = await rules.getRuntimeDefaultRules(resolved.id);
                   const next = planRuntimeAppend(before.source_text, ruleLine).next_source_text;
                   const runtime = await rules.applyRuntimeDefaultRules(next, resolved.id, {
-                    verify: Boolean(cmdOpts.verify),
+                    verify: runtimeVerify,
                     selected: true,
                   });
                   return {
@@ -235,8 +263,16 @@ export function registerRulesShortcuts(program: Command): void {
             if (pav.apply && verificationInput) {
               try {
                 live_verification = await captures.assertHeader(
-                  { instance_id: resolved.id, filters: { host: verificationInput.host }, limit: 200 },
-                  { header: verificationInput.header, equals: verificationInput.equals, durationMs: parseDurationMs(cmdOpts.duration) },
+                  {
+                    instance_id: resolved.id,
+                    filters: { host: verificationInput.host },
+                    limit: 200,
+                  },
+                  {
+                    header: verificationInput.header,
+                    equals: verificationInput.equals,
+                    durationMs: parseDurationMs(cmdOpts.duration),
+                  },
                 );
               } catch (e) {
                 const err = CliError.fromUnknown(e);
@@ -246,7 +282,7 @@ export function registerRulesShortcuts(program: Command): void {
                       instance: resolved,
                       meta: {
                         preview: pav.preview,
-                        verified: Boolean(cmdOpts.verify),
+                        verified: runtimeVerify,
                         live_verified: false,
                         action_id: result.action_id,
                       } as {
@@ -269,13 +305,19 @@ export function registerRulesShortcuts(program: Command): void {
                 okEnvelope(
                   'rules',
                   action,
-                  { preview: result.preview, runtime: result.apply_result?.runtime, live_verification },
+                  {
+                    preview: result.preview,
+                    runtime: result.apply_result?.runtime,
+                    live_verification,
+                  },
                   {
                     instance: resolved,
-                    effective: pav.apply && (!live_verification || live_verification.classification === 'OK'),
+                    effective:
+                      pav.apply &&
+                      (!live_verification || live_verification.classification === 'OK'),
                     meta: {
                       preview: pav.preview,
-                      verified: Boolean(cmdOpts.verify),
+                      verified: runtimeVerify,
                       live_verified: Boolean(live_verification),
                       action_id: result.action_id,
                     } as {
@@ -289,7 +331,8 @@ export function registerRulesShortcuts(program: Command): void {
                 format,
               ),
             );
-            if (live_verification && live_verification.classification !== 'OK') process.exitCode = 1;
+            if (live_verification && live_verification.classification !== 'OK')
+              process.exitCode = 1;
             return;
           }
 
@@ -299,9 +342,15 @@ export function registerRulesShortcuts(program: Command): void {
             { resource: 'rules', action, instance: resolved },
             pav,
             {
-              preview: async () => rules.planPatchFromText(targetRuleSet.file_id, ruleLine, 'append', resolved.id),
+              preview: async () =>
+                rules.planPatchFromText(targetRuleSet.file_id, ruleLine, 'append', resolved.id),
               apply: async () => {
-                const plan = await rules.planPatchFromText(targetRuleSet.file_id, ruleLine, 'append', resolved.id);
+                const plan = await rules.planPatchFromText(
+                  targetRuleSet.file_id,
+                  ruleLine,
+                  'append',
+                  resolved.id,
+                );
                 const out = await rules.applyPlannedPatch(plan, ruleLine, resolved.id);
                 return { result: { target: targetRuleSet, plan, apply: out } };
               },
@@ -321,7 +370,9 @@ export function registerRulesShortcuts(program: Command): void {
           );
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+          );
           process.exitCode = 1;
         }
       },
@@ -331,8 +382,15 @@ export function registerRulesShortcuts(program: Command): void {
     .command('map-local')
     .description('Shortcut: append a file:// rule mapping to local path or values ref')
     .requiredOption('--match <pattern>', 'Rule matcher pattern (e.g. www.example.com/static)')
-    .requiredOption('--to <target>', 'Mapping target (e.g. /abs/dir, D:\\dir, {valuesKey}, or (inline))')
-    .option('--target <ruleset>', 'Target rule set id or name (default: whistle-cli)', 'whistle-cli')
+    .requiredOption(
+      '--to <target>',
+      'Mapping target (e.g. /abs/dir, D:\\dir, {valuesKey}, or (inline))',
+    )
+    .option(
+      '--target <ruleset>',
+      'Target rule set id or name (default: whistle-cli)',
+      'whistle-cli',
+    )
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
@@ -354,7 +412,10 @@ export function registerRulesShortcuts(program: Command): void {
           const pav = {
             preview: Boolean(cmdOpts.preview),
             verify: Boolean(cmdOpts.verify),
-            apply: Boolean(cmdOpts.apply) || Boolean(cmdOpts.verify) || (!cmdOpts.preview && !cmdOpts.apply && !cmdOpts.verify),
+            apply:
+              Boolean(cmdOpts.apply) ||
+              Boolean(cmdOpts.verify) ||
+              (!cmdOpts.preview && !cmdOpts.apply && !cmdOpts.verify),
           };
 
           const targetRuleSet = await rules.ensureRuleSetByName(cmdOpts.target, resolved.id);
@@ -364,9 +425,15 @@ export function registerRulesShortcuts(program: Command): void {
             { resource: 'rules', action, instance: resolved },
             pav,
             {
-              preview: async () => rules.planPatchFromText(targetRuleSet.file_id, ruleLine, 'append', resolved.id),
+              preview: async () =>
+                rules.planPatchFromText(targetRuleSet.file_id, ruleLine, 'append', resolved.id),
               apply: async () => {
-                const plan = await rules.planPatchFromText(targetRuleSet.file_id, ruleLine, 'append', resolved.id);
+                const plan = await rules.planPatchFromText(
+                  targetRuleSet.file_id,
+                  ruleLine,
+                  'append',
+                  resolved.id,
+                );
                 const out = await rules.applyPlannedPatch(plan, ruleLine, resolved.id);
                 return { result: { target: targetRuleSet, plan, apply: out } };
               },
@@ -386,7 +453,9 @@ export function registerRulesShortcuts(program: Command): void {
           );
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+          );
           process.exitCode = 1;
         }
       },

@@ -45,16 +45,74 @@ describe('rule set-header runtime flow', () => {
       expect(res.stdout).toContain('"classification":"OK"');
       const out = JSON.parse(res.stdout);
       expect(out.meta.action_id).toMatch(/^act_/);
+      expect(out.meta.verified).toBe(true);
       expect(out.data.runtime).toMatchObject({ backend: 'whistle-web', changed: true });
       await expect(getRuntimeDefaultRules(stateDir, backend.baseUrl)).resolves.toMatchObject({
-        source_text: 'example.com reqHeaders://x-old=1\n/^https:\\/\\/example\\.com\\// reqHeaders://x-env=staging\n',
+        source_text:
+          'example.com reqHeaders://x-old=1\n/^https:\\/\\/example\\.com\\// reqHeaders://x-env=staging\n',
         disabled: false,
       });
 
-      const rollback = await runCli(['--instance', 'dummy', 'rules', 'rollback', '--action-id', out.meta.action_id, '--format', 'json'], {
-        env: { WHISTLE_CLI_STATE_DIR: stateDir, WHISTLE_CLI_RUNTIME_URL: backend.baseUrl },
-      });
+      const rollback = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'rules',
+          'rollback',
+          '--action-id',
+          out.meta.action_id,
+          '--format',
+          'json',
+        ],
+        {
+          env: { WHISTLE_CLI_STATE_DIR: stateDir, WHISTLE_CLI_RUNTIME_URL: backend.baseUrl },
+        },
+      );
       expect(rollback.exitCode).toBe(0);
+      await expect(getRuntimeDefaultRules(stateDir, backend.baseUrl)).resolves.toMatchObject({
+        source_text: 'example.com reqHeaders://x-old=1\n',
+        disabled: true,
+      });
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('verify-live verifies runtime default rules before live assertion', async () => {
+    const stateDir = await makeTempDir('whistle-cli-runtime-set-header-');
+    const backend = await startFakeCaptureBackend({
+      mismatchDefaultRulesOnAdd: true,
+      initialDefaultRulesIsDisabled: true,
+    });
+    try {
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'rule',
+          'set-header',
+          '--match',
+          '/^https:\\/\\/example\\.com\\//',
+          '--header',
+          'x-env=staging',
+          '--apply',
+          '--runtime-default',
+          '--verify-live',
+          '--duration',
+          '0s',
+          '--format',
+          'json',
+        ],
+        { env: { WHISTLE_CLI_STATE_DIR: stateDir, WHISTLE_CLI_RUNTIME_URL: backend.baseUrl } },
+      );
+
+      expect(res.exitCode).not.toBe(0);
+      expect(JSON.parse(res.stderr)).toMatchObject({
+        status: 'error',
+        resource: 'rules',
+        action: 'set-header',
+        error: { code: 'RULE_RUNTIME_VERIFY_FAILED' },
+      });
       await expect(getRuntimeDefaultRules(stateDir, backend.baseUrl)).resolves.toMatchObject({
         source_text: 'example.com reqHeaders://x-old=1\n',
         disabled: true,
@@ -243,7 +301,10 @@ describe('rule set-header runtime flow', () => {
 
   it('logs rollback before surfacing live verification backend errors', async () => {
     const stateDir = await makeTempDir('whistle-cli-runtime-set-header-');
-    const backend = await startFakeCaptureBackend({ failGetData: true, initialDefaultRulesIsDisabled: true });
+    const backend = await startFakeCaptureBackend({
+      failGetData: true,
+      initialDefaultRulesIsDisabled: true,
+    });
     try {
       const res = await runCli(
         [
@@ -276,13 +337,26 @@ describe('rule set-header runtime flow', () => {
       });
       expect(err.meta.action_id).toMatch(/^act_/);
       await expect(getRuntimeDefaultRules(stateDir, backend.baseUrl)).resolves.toMatchObject({
-        source_text: 'example.com reqHeaders://x-old=1\n/^https:\\/\\/example\\.com\\// reqHeaders://x-env=staging\n',
+        source_text:
+          'example.com reqHeaders://x-old=1\n/^https:\\/\\/example\\.com\\// reqHeaders://x-env=staging\n',
         disabled: false,
       });
 
-      const rollback = await runCli(['--instance', 'dummy', 'rules', 'rollback', '--action-id', err.meta.action_id, '--format', 'json'], {
-        env: { WHISTLE_CLI_STATE_DIR: stateDir, WHISTLE_CLI_RUNTIME_URL: backend.baseUrl },
-      });
+      const rollback = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'rules',
+          'rollback',
+          '--action-id',
+          err.meta.action_id,
+          '--format',
+          'json',
+        ],
+        {
+          env: { WHISTLE_CLI_STATE_DIR: stateDir, WHISTLE_CLI_RUNTIME_URL: backend.baseUrl },
+        },
+      );
       expect(rollback.exitCode).toBe(0);
       await expect(getRuntimeDefaultRules(stateDir, backend.baseUrl)).resolves.toMatchObject({
         source_text: 'example.com reqHeaders://x-old=1\n',
