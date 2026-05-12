@@ -4,7 +4,7 @@ import { resolveInstanceId } from '../shared/instance-context';
 import { CliError } from '../output/errors';
 import { errorEnvelope, okEnvelope } from '../output/result';
 import { renderEnvelope } from '../output/renderers';
-import { CapturesService } from '../domain/captures-service';
+import { CapturesService, filterNewHeaderAssertionEvents } from '../domain/captures-service';
 
 function parseDurationMs(input: unknown): number {
   const raw = String(input ?? '60s').trim();
@@ -226,6 +226,7 @@ export function registerCapturesResource(program: Command): void {
 
         const expected = splitHeaderPair(String(cmdOpts.expectHeader));
         const backend = assertFindBackend(cmdOpts.backend);
+        const seenCaptureIds = new Set<string>();
         let finalClassification = 'OK';
         do {
           const result = await service.assertHeader(
@@ -237,7 +238,7 @@ export function registerCapturesResource(program: Command): void {
             },
             { ...expected, durationMs: parseDurationMs(cmdOpts.duration) },
           );
-          for (const event of result.events) {
+          for (const event of filterNewHeaderAssertionEvents(result.events, seenCaptureIds)) {
             process.stdout.write(renderEnvelope(okEnvelope('captures', action, event, { instance: resolved, event: 'capture' }), 'ndjson'));
           }
           process.stdout.write(renderEnvelope(okEnvelope('captures', action, result, { instance: resolved, event: 'end' }), 'ndjson'));

@@ -4,6 +4,7 @@ import { RuntimeClient } from '../backends/runtime/runtime-client';
 import { WhistleWebClient } from '../backends/whistle-web';
 import { CliError } from '../output/errors';
 import type {
+  CaptureBackend,
   CaptureQuery,
   CaptureRecord,
   HeaderAssertionExample,
@@ -34,8 +35,21 @@ function parseProtocolFromUrl(url: string | undefined): CaptureRecord['protocol'
   }
 }
 
+function normalizeRequestHeaders(...candidates: unknown[]): Record<string, string> | undefined {
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(candidate)) {
+      out[key.toLowerCase()] = Array.isArray(value) ? value.map(String).join(', ') : String(value);
+    }
+    if (Object.keys(out).length > 0) return out;
+  }
+  return undefined;
+}
+
 function normalizeRuntimeCapture(raw: any, instanceId: string): CaptureRecord {
   const capture_id = String(raw.capture_id ?? raw.id ?? raw.sessionId ?? raw.reqId ?? '');
+  const request_headers = normalizeRequestHeaders(raw.request_headers, raw.headers, raw.req?.headers);
   return {
     capture_id: capture_id || `cap_${Math.random().toString(16).slice(2)}`,
     instance_id: instanceId,
@@ -43,10 +57,11 @@ function normalizeRuntimeCapture(raw: any, instanceId: string): CaptureRecord {
     protocol: parseProtocol(raw.protocol ?? raw.proto ?? raw.type),
     method: raw.method ? String(raw.method) : undefined,
     url: raw.url ? String(raw.url) : undefined,
-    host: raw.host ? String(raw.host) : undefined,
+    host: raw.host ? String(raw.host) : request_headers?.host,
     path: raw.path ? String(raw.path) : undefined,
     status_code:
       typeof raw.status_code === 'number' ? raw.status_code : typeof raw.statusCode === 'number' ? raw.statusCode : undefined,
+    request_headers,
   };
 }
 
@@ -85,11 +100,7 @@ export function normalizeWhistleWebCapture(raw: any, instanceId: string, fallbac
     }
   }
 
-  const headers = raw?.req?.headers && typeof raw.req.headers === 'object' ? raw.req.headers : {};
-  const request_headers: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    request_headers[key.toLowerCase()] = Array.isArray(value) ? value.map(String).join(', ') : String(value);
-  }
+  const request_headers = normalizeRequestHeaders(raw?.req?.headers);
 
   const matchedRules: Record<string, unknown> = {};
   if (raw?.rules !== undefined) matchedRules.rules = raw.rules;
@@ -102,7 +113,7 @@ export function normalizeWhistleWebCapture(raw: any, instanceId: string, fallbac
     protocol: parsedUrl ? parseProtocol(parsedUrl.protocol.replace(/:$/, '')) : parseProtocolFromUrl(url),
     method: raw?.req?.method ? String(raw.req.method) : undefined,
     url,
-    host: parsedUrl?.host ?? request_headers.host,
+    host: parsedUrl?.host ?? request_headers?.host,
     path: parsedUrl ? `${parsedUrl.pathname}${parsedUrl.search}` : undefined,
     status_code:
       typeof raw?.res?.statusCode === 'number'
@@ -114,14 +125,23 @@ export function normalizeWhistleWebCapture(raw: any, instanceId: string, fallbac
             : typeof raw?.statusCode === 'number'
               ? raw.statusCode
               : undefined,
-    request_headers: Object.keys(request_headers).length ? request_headers : undefined,
+    request_headers,
     matched_rules: Object.keys(matchedRules).length ? matchedRules : undefined,
   };
 }
 
-export function classifyHeaderRecord(record: CaptureRecord, header: string, expected: string): HeaderAssertionExample {
+function getHeaderValue(headers: Record<string, string> | undefined, header: string): string | undefined {
+  if (!headers) return undefined;
   const key = header.toLowerCase();
-  const actual = record.request_headers?.[key];
+  if (headers[key] != null) return headers[key];
+  for (const [candidate, value] of Object.entries(headers)) {
+    if (candidate.toLowerCase() === key) return value;
+  }
+  return undefined;
+}
+
+export function classifyHeaderRecord(record: CaptureRecord, header: string, expected: string): HeaderAssertionExample {
+  const actual = getHeaderValue(record.request_headers, header);
   const classification = actual === expected ? 'OK' : actual == null ? 'MISS' : 'OVERRIDDEN';
   return {
     capture_id: record.capture_id,
@@ -132,6 +152,23 @@ export function classifyHeaderRecord(record: CaptureRecord, header: string, expe
     actual: actual == null ? undefined : `${header}=${actual}`,
     classification,
   };
+}
+
+export function filterNewHeaderAssertionEvents(
+  events: HeaderAssertionExample[],
+  seenCaptureIds: Set<string>,
+): HeaderAssertionExample[] {
+  const out: HeaderAssertionExample[] = [];
+  for (const event of events) {
+    if (seenCaptureIds.has(event.capture_id)) continue;
+    seenCaptureIds.add(event.capture_id);
+    out.push(event);
+  }
+  return out;
+}
+
+function knownCaptureBackend(backend: CaptureQuery['backend']): CaptureBackend | undefined {
+  return backend === 'runtime' || backend === 'whistle-web' ? backend : undefined;
 }
 
 export function summarizeHeaderAssertion(records: CaptureRecord[], opts: HeaderAssertionOptions): HeaderAssertionResult {
@@ -306,10 +343,14 @@ export class CapturesService {
         seen.set(item.capture_id, item);
       }
       if (seen.size > 0 && Date.now() >= deadline) break;
-      if (Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 1000));
+      const remainingMs = deadline - Date.now();
+      if (remainingMs > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(1000, remainingMs)));
     } while (Date.now() < deadline);
 
-    return summarizeHeaderAssertion([...seen.values()], opts);
+    const summary = summarizeHeaderAssertion([...seen.values()], opts);
+    const knownBackend = knownCaptureBackend(query.backend);
+    if (summary.no_traffic && knownBackend) return { ...summary, backend: knownBackend };
+    return summary;
   }
 
   async get(instanceId: string, captureId: string): Promise<CaptureRecord> {

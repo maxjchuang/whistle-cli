@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyHeaderRecord, summarizeHeaderAssertion } from '../../src/domain/captures-service';
+import { CapturesService, classifyHeaderRecord, filterNewHeaderAssertionEvents, summarizeHeaderAssertion } from '../../src/domain/captures-service';
 import type { CaptureRecord } from '../../src/domain/captures-model';
 
 function rec(headers?: Record<string, string>): CaptureRecord {
@@ -20,6 +20,10 @@ describe('header assertion classification', () => {
     expect(classifyHeaderRecord(rec({ 'x-env': 'staging' }), 'x-env', 'staging').classification).toBe('OK');
     expect(classifyHeaderRecord(rec({ 'x-env': 'other' }), 'x-env', 'staging').classification).toBe('OVERRIDDEN');
     expect(classifyHeaderRecord(rec({}), 'x-env', 'staging').classification).toBe('MISS');
+  });
+
+  it('classifies request headers case-insensitively', () => {
+    expect(classifyHeaderRecord(rec({ 'X-Env': 'staging' }), 'x-env', 'staging').classification).toBe('OK');
   });
 
   it('summarizes ok traffic', () => {
@@ -57,5 +61,47 @@ describe('header assertion classification', () => {
 
     expect(summary.classification).toBe('NO_TRAFFIC');
     expect(summary.no_traffic).toBe(true);
+  });
+
+  it('keeps known backend on no traffic assertion summaries', async () => {
+    const service = new CapturesService();
+    (service as any).find = async () => ({ filters: {}, count: 0, items: [] });
+
+    const summary = await service.assertHeader(
+      { instance_id: 'default', backend: 'runtime', filters: { host: 'example.com' }, limit: 200 },
+      { header: 'x-env', equals: 'staging', durationMs: 0 },
+    );
+
+    expect(summary.classification).toBe('NO_TRAFFIC');
+    expect(summary.backend).toBe('runtime');
+  });
+
+  it('filters duplicate header assertion events across watch iterations', () => {
+    const seen = new Set<string>();
+    const first = filterNewHeaderAssertionEvents(
+      [
+        {
+          capture_id: 'c1',
+          expected: 'x-env=staging',
+          actual: 'x-env=staging',
+          classification: 'OK',
+        },
+      ],
+      seen,
+    );
+    const second = filterNewHeaderAssertionEvents(
+      [
+        {
+          capture_id: 'c1',
+          expected: 'x-env=staging',
+          actual: 'x-env=staging',
+          classification: 'OK',
+        },
+      ],
+      seen,
+    );
+
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(0);
   });
 });

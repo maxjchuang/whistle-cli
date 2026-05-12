@@ -65,4 +65,38 @@ describe('header assertion commands', () => {
       await backend.close();
     }
   });
+
+  it('captures assert-header succeeds when runtime request header matches', async () => {
+    const stateDir = await makeTempDir('whistle-cli-header-assert-');
+    const backend = await startFakeCaptureBackend();
+    try {
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'assert-header',
+          '--host',
+          'example.com',
+          '--header',
+          'x-env',
+          '--equals',
+          'staging',
+          '--duration',
+          '0s',
+          '--backend',
+          'runtime',
+          '--format',
+          'json',
+        ],
+        { env: { WHISTLE_CLI_STATE_DIR: stateDir, WHISTLE_CLI_RUNTIME_URL: backend.baseUrl } },
+      );
+      expect(res.exitCode).toBe(0);
+      expect(res.stdout).toContain('"backend":"runtime"');
+      expect(res.stdout).toContain('"classification":"OK"');
+      expect(res.stdout).toContain('"ok":2');
+    } finally {
+      await backend.close();
+    }
+  });
 });

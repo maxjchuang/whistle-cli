@@ -182,6 +182,7 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
           host: host || 'example.com',
           path: '/api/hello',
           statusCode: 200,
+          headers: { host: host || 'example.com', 'X-Env': 'staging' },
         },
         {
           id: 'cap_2',
@@ -191,6 +192,7 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
           host: host || 'example.com',
           path: '/api/world',
           statusCode: 201,
+          request_headers: { host: host || 'example.com', 'x-env': 'staging' },
         },
       ];
 
