@@ -29,4 +29,24 @@ describe('rule header conflict diagnosis', () => {
     expect(result.matches.length).toBe(2);
     expect(result.matches.map((m) => m.value)).toEqual(['a', 'b']);
   });
+
+  it('does not match host/path patterns across unrelated host boundaries', () => {
+    const result = diagnoseHeaderConflictsFromText('example.com/api reqHeaders://x-env=bad', {
+      header: 'x-env',
+      url: 'https://badexample.com/api/foo',
+    });
+
+    expect(result.conflict).toBe(false);
+    expect(result.matches).toEqual([]);
+  });
+
+  it('matches header names case-insensitively', () => {
+    const result = diagnoseHeaderConflictsFromText('example.com reqHeaders://X-Env=staging', {
+      header: 'x-env',
+      url: 'https://example.com/api/widgets/123/trigger',
+    });
+
+    expect(result.conflict).toBe(false);
+    expect(result.matches.map((m) => m.value)).toEqual(['staging']);
+  });
 });

@@ -42,4 +42,36 @@ describe('rules diagnose-conflicts', () => {
       await backend.close();
     }
   });
+
+  it('exits zero when no runtime default rule conflict is found', async () => {
+    const backend = await startFakeCaptureBackend();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'whistle-cli-conflicts-'));
+    const file = path.join(dir, 'rules.txt');
+    await fs.writeFile(file, 'example.com/api reqHeaders://X-Env=single\n', 'utf8');
+    try {
+      await runCli(['--instance', 'dummy', 'rules', 'default', 'apply', '--file', file, '--apply', '--verify', '--format', 'json'], {
+        env: { WHISTLE_CLI_RUNTIME_URL: backend.baseUrl },
+      });
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'rules',
+          'diagnose-conflicts',
+          '--header',
+          'x-env',
+          '--url',
+          'https://example.com/api/widgets/123/trigger',
+          '--format',
+          'json',
+        ],
+        { env: { WHISTLE_CLI_RUNTIME_URL: backend.baseUrl } },
+      );
+      expect(res.exitCode).toBe(0);
+      expect(res.stdout).toContain('"conflict":false');
+      expect(res.stdout).toContain('"value":"single"');
+    } finally {
+      await backend.close();
+    }
+  });
 });

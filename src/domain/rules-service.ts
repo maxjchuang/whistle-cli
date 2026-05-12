@@ -187,7 +187,7 @@ function matcherMatchesUrl(pattern: string, targetUrl: string): boolean {
 
   const hostAndPath = `${parsed.host}${parsed.pathname}`;
   if (trimmed.startsWith('/')) return parsed.pathname === trimmed || parsed.pathname.includes(trimmed);
-  if (trimmed.includes('/')) return hostAndPath === trimmed || hostAndPath.startsWith(trimmed) || hostAndPath.includes(trimmed);
+  if (trimmed.includes('/')) return hostAndPath === trimmed || hostAndPath.startsWith(`${trimmed}/`);
   return parsed.hostname === trimmed || parsed.hostname.endsWith(`.${trimmed}`);
 }
 
