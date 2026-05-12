@@ -3,7 +3,13 @@ import { loadConfig } from '../shared/config';
 import { RuntimeClient } from '../backends/runtime/runtime-client';
 import { WhistleWebClient } from '../backends/whistle-web';
 import { CliError } from '../output/errors';
-import type { CaptureQuery, CaptureRecord } from './captures-model';
+import type {
+  CaptureQuery,
+  CaptureRecord,
+  HeaderAssertionExample,
+  HeaderAssertionOptions,
+  HeaderAssertionResult,
+} from './captures-model';
 
 function normalizeLimit(n: unknown): number {
   const v = typeof n === 'number' ? n : Number(String(n ?? ''));
@@ -110,6 +116,54 @@ export function normalizeWhistleWebCapture(raw: any, instanceId: string, fallbac
               : undefined,
     request_headers: Object.keys(request_headers).length ? request_headers : undefined,
     matched_rules: Object.keys(matchedRules).length ? matchedRules : undefined,
+  };
+}
+
+export function classifyHeaderRecord(record: CaptureRecord, header: string, expected: string): HeaderAssertionExample {
+  const key = header.toLowerCase();
+  const actual = record.request_headers?.[key];
+  const classification = actual === expected ? 'OK' : actual == null ? 'MISS' : 'OVERRIDDEN';
+  return {
+    capture_id: record.capture_id,
+    url: record.url,
+    method: record.method,
+    status_code: record.status_code,
+    expected: `${header}=${expected}`,
+    actual: actual == null ? undefined : `${header}=${actual}`,
+    classification,
+  };
+}
+
+export function summarizeHeaderAssertion(records: CaptureRecord[], opts: HeaderAssertionOptions): HeaderAssertionResult {
+  if (records.length === 0) {
+    return {
+      backend: 'whistle-web',
+      observed: 0,
+      ok: 0,
+      overridden: 0,
+      miss: 0,
+      no_traffic: true,
+      classification: 'NO_TRAFFIC',
+      events: [],
+      examples: [],
+    };
+  }
+
+  const events = records.map((r) => classifyHeaderRecord(r, opts.header, opts.equals));
+  const ok = events.filter((e) => e.classification === 'OK').length;
+  const overridden = events.filter((e) => e.classification === 'OVERRIDDEN').length;
+  const miss = events.filter((e) => e.classification === 'MISS').length;
+
+  return {
+    backend: records[0]?.backend ?? 'whistle-web',
+    observed: records.length,
+    ok,
+    overridden,
+    miss,
+    no_traffic: false,
+    classification: overridden || miss ? 'OVERRIDDEN' : 'OK',
+    events,
+    examples: events.filter((e) => e.classification !== 'OK').slice(0, 5),
   };
 }
 
@@ -237,6 +291,25 @@ export class CapturesService {
     const rawItems = Array.isArray((res as any).items) ? ((res as any).items as any[]) : [];
     const items = rawItems.map((r) => normalizeRuntimeCapture(r, query.instance_id));
     return this.buildFindResult(query, items);
+  }
+
+  async assertHeader(
+    query: CaptureQuery,
+    opts: HeaderAssertionOptions & { durationMs?: number },
+  ): Promise<HeaderAssertionResult> {
+    const deadline = Date.now() + (opts.durationMs ?? 60_000);
+    const seen = new Map<string, CaptureRecord>();
+
+    do {
+      const result = await this.find(query);
+      for (const item of result.items) {
+        seen.set(item.capture_id, item);
+      }
+      if (seen.size > 0 && Date.now() >= deadline) break;
+      if (Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 1000));
+    } while (Date.now() < deadline);
+
+    return summarizeHeaderAssertion([...seen.values()], opts);
   }
 
   async get(instanceId: string, captureId: string): Promise<CaptureRecord> {

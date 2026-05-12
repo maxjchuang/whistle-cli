@@ -37,6 +37,35 @@ export interface CaptureRecord {
   matched_rules?: unknown;
 }
 
+export type HeaderAssertionClassification = 'OK' | 'OVERRIDDEN' | 'MISS' | 'NO_TRAFFIC';
+
+export interface HeaderAssertionOptions {
+  header: string;
+  equals: string;
+}
+
+export interface HeaderAssertionExample {
+  capture_id: string;
+  url?: string;
+  method?: string;
+  status_code?: number;
+  expected: string;
+  actual?: string;
+  classification: HeaderAssertionClassification;
+}
+
+export interface HeaderAssertionResult {
+  backend: CaptureBackend;
+  observed: number;
+  ok: number;
+  overridden: number;
+  miss: number;
+  no_traffic: boolean;
+  classification: HeaderAssertionClassification;
+  events: HeaderAssertionExample[];
+  examples: HeaderAssertionExample[];
+}
+
 export interface ComposeRequest {
   compose_id: string;
   instance_id: string;

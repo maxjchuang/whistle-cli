@@ -6,6 +6,24 @@ import { errorEnvelope, okEnvelope } from '../output/result';
 import { renderEnvelope } from '../output/renderers';
 import { CapturesService } from '../domain/captures-service';
 
+function parseDurationMs(input: unknown): number {
+  const raw = String(input ?? '60s').trim();
+  const parsed = raw.endsWith('ms') ? Number(raw.slice(0, -2)) : raw.endsWith('s') ? Number(raw.slice(0, -1)) * 1000 : Number(raw) * 1000;
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 60_000;
+}
+
+function splitHeaderPair(pair: string): { header: string; equals: string } {
+  const idx = pair.indexOf('=');
+  if (idx <= 0) {
+    throw new CliError({
+      code: 'UNSUPPORTED_OPERATION',
+      message: 'Expected header pair in key=value format',
+      suggested_fix: 'Use --expect-header x-env=staging.',
+    });
+  }
+  return { header: pair.slice(0, idx), equals: pair.slice(idx + 1) };
+}
+
 function assertFindBackend(backend: unknown): 'auto' | 'whistle-web' | 'runtime' {
   if (backend === 'auto' || backend === 'whistle-web' || backend === 'runtime') return backend;
   throw new CliError({
@@ -143,6 +161,95 @@ export function registerCapturesResource(program: Command): void {
         { instance: resolved, effective: true, event: 'end', meta: { verified: true } },
       );
       process.stdout.write(renderEnvelope(endEnvelope, 'ndjson'));
+    });
+
+  captures
+    .command('assert-header')
+    .description('Observe captures and assert a request header value')
+    .requiredOption('--host <host>', 'Filter by host')
+    .option('--path <path>', 'Filter by request path substring')
+    .requiredOption('--header <name>', 'Request header name')
+    .requiredOption('--equals <value>', 'Expected request header value')
+    .option('--duration <duration>', 'Observation duration, e.g. 60s', '60s')
+    .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
+    .action(async (cmdOpts: any) => {
+      const opts = program.opts();
+      const format = (opts.format ?? 'json') as OutputFormat;
+      const resolved = await resolveInstanceId(opts.instance);
+      const action = 'assert-header';
+
+      try {
+        const backend = assertFindBackend(cmdOpts.backend);
+        const result = await service.assertHeader(
+          {
+            instance_id: resolved.id,
+            backend,
+            filters: { host: String(cmdOpts.host), path: cmdOpts.path ? String(cmdOpts.path) : undefined },
+            limit: 200,
+          },
+          { header: String(cmdOpts.header), equals: String(cmdOpts.equals), durationMs: parseDurationMs(cmdOpts.duration) },
+        );
+        process.stdout.write(
+          renderEnvelope(okEnvelope('captures', action, result, { instance: resolved, effective: result.classification === 'OK' }), format),
+        );
+        if (result.classification !== 'OK') process.exitCode = 1;
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved }), format));
+        process.exitCode = 1;
+      }
+    });
+
+  captures
+    .command('watch')
+    .description('Observe captures and emit header assertion events')
+    .requiredOption('--host <host>', 'Filter by host')
+    .option('--path <path>', 'Filter by request path substring')
+    .requiredOption('--expect-header <k=v>', 'Expected request header pair')
+    .option('--duration <duration>', 'Observation duration, e.g. 60s', '60s')
+    .option('--watch', 'Keep watching until interrupted')
+    .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
+    .action(async (cmdOpts: any) => {
+      const opts = program.opts();
+      const format = (opts.format ?? 'ndjson') as OutputFormat;
+      const resolved = await resolveInstanceId(opts.instance);
+      const action = 'watch';
+
+      try {
+        if (format !== 'ndjson') {
+          throw new CliError({
+            code: 'UNSUPPORTED_OPERATION',
+            message: '`captures watch` requires --format ndjson',
+            suggested_fix: 'Re-run with: whistle-cli --format ndjson captures watch',
+          });
+        }
+
+        const expected = splitHeaderPair(String(cmdOpts.expectHeader));
+        const backend = assertFindBackend(cmdOpts.backend);
+        let finalClassification = 'OK';
+        do {
+          const result = await service.assertHeader(
+            {
+              instance_id: resolved.id,
+              backend,
+              filters: { host: String(cmdOpts.host), path: cmdOpts.path ? String(cmdOpts.path) : undefined },
+              limit: 200,
+            },
+            { ...expected, durationMs: parseDurationMs(cmdOpts.duration) },
+          );
+          for (const event of result.events) {
+            process.stdout.write(renderEnvelope(okEnvelope('captures', action, event, { instance: resolved, event: 'capture' }), 'ndjson'));
+          }
+          process.stdout.write(renderEnvelope(okEnvelope('captures', action, result, { instance: resolved, event: 'end' }), 'ndjson'));
+          finalClassification = result.classification;
+        } while (cmdOpts.watch);
+
+        if (finalClassification !== 'OK') process.exitCode = 1;
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved, event: 'error' }), 'json'));
+        process.exitCode = 1;
+      }
     });
 
   // Contract-required actions (stubs for now)
