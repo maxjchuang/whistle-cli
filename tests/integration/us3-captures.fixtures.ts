@@ -12,6 +12,7 @@ export interface FakeCaptureBackendOptions {
   ignoreDefaultStateChange?: boolean;
   failRestoreAfterMismatch?: boolean;
   failDefaultStateToggleAfterAdd?: boolean;
+  failGetData?: boolean;
   disableCaptureRuntimeRoutes?: boolean;
   nativeCaptureData?: Record<string, any>;
 }
@@ -139,6 +140,11 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
     }
 
     if (u.pathname === '/cgi-bin/get-data') {
+      if (opts?.failGetData) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ ec: 1, em: 'get-data unavailable' }));
+        return;
+      }
       const defaultData = {
         n1: {
           id: 'n1',

@@ -217,14 +217,8 @@ export function registerRulesShortcuts(program: Command): void {
                     verify: Boolean(cmdOpts.verify),
                     selected: true,
                   });
-                  const live_verification = verificationInput
-                    ? await captures.assertHeader(
-                        { instance_id: resolved.id, filters: { host: verificationInput.host }, limit: 200 },
-                        { header: verificationInput.header, equals: verificationInput.equals, durationMs: parseDurationMs(cmdOpts.duration) },
-                      )
-                    : undefined;
                   return {
-                    result: { runtime, live_verification },
+                    result: { runtime },
                     rollback: {
                       type: 'rules.default',
                       prev_text: before.source_text,
@@ -237,7 +231,38 @@ export function registerRulesShortcuts(program: Command): void {
               },
             );
 
-            const live_verification = result.apply_result?.live_verification;
+            let live_verification: Awaited<ReturnType<CapturesService['assertHeader']>> | undefined;
+            if (pav.apply && verificationInput) {
+              try {
+                live_verification = await captures.assertHeader(
+                  { instance_id: resolved.id, filters: { host: verificationInput.host }, limit: 200 },
+                  { header: verificationInput.header, equals: verificationInput.equals, durationMs: parseDurationMs(cmdOpts.duration) },
+                );
+              } catch (e) {
+                const err = CliError.fromUnknown(e);
+                process.stderr.write(
+                  renderEnvelope(
+                    errorEnvelope('rules', action, err, {
+                      instance: resolved,
+                      meta: {
+                        preview: pav.preview,
+                        verified: Boolean(cmdOpts.verify),
+                        live_verified: false,
+                        action_id: result.action_id,
+                      } as {
+                        preview: boolean;
+                        verified: boolean;
+                        live_verified: boolean;
+                        action_id: string;
+                      },
+                    }),
+                    format,
+                  ),
+                );
+                process.exitCode = 1;
+                return;
+              }
+            }
 
             process.stdout.write(
               renderEnvelope(
