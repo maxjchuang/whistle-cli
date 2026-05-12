@@ -9,12 +9,15 @@ export interface FakeCaptureBackendOptions {
   failRulesAdd?: boolean;
   mismatchDefaultRulesOnAdd?: boolean;
   initialDefaultRulesIsDisabled?: boolean;
+  ignoreDefaultStateChange?: boolean;
+  failRestoreAfterMismatch?: boolean;
 }
 
 export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions): Promise<FakeCaptureBackend> {
   let defaultRules = 'example.com reqHeaders://x-old=1\n';
   let defaultRulesIsDisabled = Boolean(opts?.initialDefaultRulesIsDisabled);
   let mismatchWritesRemaining = opts?.mismatchDefaultRulesOnAdd ? 1 : 0;
+  let failNextRulesAdd = false;
 
   async function readBody(req: http.IncomingMessage): Promise<string> {
     return await new Promise((resolve, reject) => {
@@ -58,14 +61,18 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
     }
 
     if (u.pathname === '/cgi-bin/rules/enable-default') {
-      defaultRulesIsDisabled = false;
+      if (!opts?.ignoreDefaultStateChange) {
+        defaultRulesIsDisabled = false;
+      }
       res.statusCode = 200;
       res.end(JSON.stringify({ ec: 0 }));
       return;
     }
 
     if (u.pathname === '/cgi-bin/rules/disable-default') {
-      defaultRulesIsDisabled = true;
+      if (!opts?.ignoreDefaultStateChange) {
+        defaultRulesIsDisabled = true;
+      }
       res.statusCode = 200;
       res.end(JSON.stringify({ ec: 0 }));
       return;
@@ -80,11 +87,22 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
             res.end(JSON.stringify({ ec: 1, em: 'failed to add default rules' }));
             return;
           }
+          if (failNextRulesAdd) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ec: 1, em: 'failed to restore default rules' }));
+            return;
+          }
           if (params.get('name') === 'Default') {
             const value = params.get('value') ?? '';
-            defaultRules = mismatchWritesRemaining > 0 ? `${value}# rewritten by backend\n` : value;
+            const shouldMismatch = mismatchWritesRemaining > 0;
+            defaultRules = shouldMismatch ? `${value}# rewritten by backend\n` : value;
             mismatchWritesRemaining = Math.max(0, mismatchWritesRemaining - 1);
-            defaultRulesIsDisabled = params.get('selected') === 'false';
+            if (shouldMismatch && opts?.failRestoreAfterMismatch) {
+              failNextRulesAdd = true;
+            }
+            if (!opts?.ignoreDefaultStateChange) {
+              defaultRulesIsDisabled = params.get('selected') === 'false';
+            }
           }
           res.statusCode = 200;
           res.end(JSON.stringify({ ec: 0 }));

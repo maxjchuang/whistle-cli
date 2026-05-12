@@ -118,7 +118,7 @@ export function registerRulesResource(program: Command): void {
             apply: async () => {
               const before = await service.getRuntimeDefaultRules(resolved.id);
               return {
-                result: await service.applyRuntimeDefaultRules(text, resolved.id, { verify: pav.verify }),
+                result: await service.applyRuntimeDefaultRules(text, resolved.id, { verify: pav.verify, selected: true }),
                 rollback: { type: 'rules.default', prev_text: before.source_text, prev_disabled: before.disabled, instanceId: resolved.id },
               };
             },

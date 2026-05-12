@@ -220,16 +220,26 @@ export class RulesService {
     const afterText = after.defaultRules ?? '';
     const afterDisabled = Boolean(after.defaultRulesIsDisabled);
 
-    if (opts?.verify && normalizeEol(afterText) !== normalizeEol(text)) {
+    const textMismatch = normalizeEol(afterText) !== normalizeEol(text);
+    const expectedDisabled = typeof opts?.selected === 'boolean' ? !opts.selected : undefined;
+    const stateMismatch = typeof expectedDisabled === 'boolean' && afterDisabled !== expectedDisabled;
+
+    if (opts?.verify && (textMismatch || stateMismatch)) {
+      let restoreFailure: string | undefined;
       try {
         await this.restoreRuntimeDefaultRules(client, beforeText, beforeDisabled);
-      } catch {
-        // Preserve the verification failure as the primary error; restore is best effort.
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        restoreFailure = `${err.details.code}: ${err.details.message}${err.details.reason ? ` (${err.details.reason})` : ''}`;
       }
       throw new CliError({
         code: 'RULE_RUNTIME_VERIFY_FAILED',
         message: 'Runtime default rules verification failed',
-        reason: 'Whistle Web API returned default rules that differ from the requested content.',
+        reason: [
+          textMismatch ? 'Whistle Web API returned default rules that differ from the requested content.' : undefined,
+          stateMismatch ? `Whistle Web API returned defaultRulesIsDisabled=${afterDisabled}, expected ${expectedDisabled}.` : undefined,
+          restoreFailure ? `Restore failed: ${restoreFailure}` : undefined,
+        ].filter(Boolean).join(' '),
         suggested_fix: 'Re-run `whistle-cli rules default get` and inspect the active runtime rules before applying again.',
       });
     }

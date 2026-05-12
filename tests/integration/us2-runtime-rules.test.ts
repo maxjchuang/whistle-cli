@@ -180,6 +180,74 @@ describe('US2 runtime default rules (integration)', () => {
     }
   });
 
+  it('rules default apply verify detects silent enabled state mismatch', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us2-runtime-state-');
+    const workDir = await makeTempDir('whistle-cli-us2-runtime-work-');
+    const rulesPath = path.join(workDir, 'default-rules.txt');
+    await fs.writeFile(rulesPath, 'example.com reqHeaders://x-new=2\n', 'utf8');
+    const backend = await startFakeCaptureBackend({ initialDefaultRulesIsDisabled: true, ignoreDefaultStateChange: true });
+    try {
+      const apply = await runCli(
+        ['--instance', 'dummy', 'rules', 'default', 'apply', '--file', rulesPath, '--apply', '--verify', '--format', 'json'],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+
+      expect(apply.exitCode).not.toBe(0);
+      const err = JSON.parse(apply.stderr);
+      expect(err).toMatchObject({
+        status: 'error',
+        resource: 'rules',
+        action: 'default-apply',
+        error: {
+          code: 'RULE_RUNTIME_VERIFY_FAILED',
+        },
+      });
+      expect(err.error.reason).toContain('defaultRulesIsDisabled=true');
+      expect(err.error.reason).toContain('expected false');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('rules default apply verify surfaces restore failure details', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us2-runtime-state-');
+    const workDir = await makeTempDir('whistle-cli-us2-runtime-work-');
+    const rulesPath = path.join(workDir, 'default-rules.txt');
+    await fs.writeFile(rulesPath, 'example.com reqHeaders://x-new=2\n', 'utf8');
+    const backend = await startFakeCaptureBackend({ mismatchDefaultRulesOnAdd: true, failRestoreAfterMismatch: true });
+    try {
+      const apply = await runCli(
+        ['--instance', 'dummy', 'rules', 'default', 'apply', '--file', rulesPath, '--apply', '--verify', '--format', 'json'],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+
+      expect(apply.exitCode).not.toBe(0);
+      const err = JSON.parse(apply.stderr);
+      expect(err).toMatchObject({
+        status: 'error',
+        resource: 'rules',
+        action: 'default-apply',
+        error: {
+          code: 'RULE_RUNTIME_VERIFY_FAILED',
+        },
+      });
+      expect(err.error.reason).toContain('Restore failed');
+      expect(err.error.reason).toContain('failed to restore default rules');
+    } finally {
+      await backend.close();
+    }
+  });
+
   it('rules default rollback restores previous disabled state', async () => {
     const stateDir = await makeTempDir('whistle-cli-us2-runtime-state-');
     const workDir = await makeTempDir('whistle-cli-us2-runtime-work-');
