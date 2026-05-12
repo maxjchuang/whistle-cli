@@ -9,7 +9,7 @@ describe('US3 captures (integration)', () => {
     const backend = await startFakeCaptureBackend();
     try {
       const ok = await runCli(
-        ['--instance', 'dummy', 'captures', 'find', '--limit', '2', '--format', 'json'],
+        ['--instance', 'dummy', 'captures', 'find', '--limit', '2', '--backend', 'runtime', '--format', 'json'],
         {
           env: {
             WHISTLE_CLI_STATE_DIR: stateDir,
@@ -23,7 +23,7 @@ describe('US3 captures (integration)', () => {
       expect(ok.stdout).toContain('"count":2');
 
       const empty = await runCli(
-        ['--instance', 'dummy', 'captures', 'find', '--keyword', 'none', '--format', 'json'],
+        ['--instance', 'dummy', 'captures', 'find', '--keyword', 'none', '--backend', 'runtime', '--format', 'json'],
         {
           env: {
             WHISTLE_CLI_STATE_DIR: stateDir,
@@ -38,11 +38,142 @@ describe('US3 captures (integration)', () => {
     }
   });
 
+  it('captures find uses Whistle Web API by default when runtime routes are absent', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({ disableCaptureRuntimeRoutes: true });
+    try {
+      const res = await runCli(['--instance', 'dummy', 'captures', 'find', '--host', 'example.com', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(res.exitCode).toBe(0);
+      expect(res.stdout).toContain('"backend":"whistle-web"');
+      expect(res.stdout).toContain('"request_headers"');
+      expect(res.stdout).toContain('"x-env":"staging"');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures find filters after reading a larger native session window', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      nativeCaptureData: {
+        other: {
+          id: 'other',
+          url: 'https://other.example/api/nope',
+          req: { method: 'GET', headers: { host: 'other.example' } },
+          res: { statusCode: 200 },
+        },
+        native_key_only: {
+          url: 'https://example.com/api/late',
+          req: { method: 'GET', headers: { host: 'example.com' } },
+          res: { statusCode: 200 },
+        },
+      },
+    });
+    try {
+      const res = await runCli(['--instance', 'dummy', 'captures', 'find', '--host', 'example.com', '--limit', '1', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(res.exitCode).toBe(0);
+      expect(res.stdout).toContain('"count":1');
+      expect(res.stdout).toContain('"capture_id":"native_key_only"');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures find --backend runtime fails when runtime routes are absent', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({ disableCaptureRuntimeRoutes: true });
+    try {
+      const res = await runCli(['--instance', 'dummy', 'captures', 'find', '--backend', 'runtime', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(res.exitCode).not.toBe(0);
+      expect(res.stderr).toContain('"code":"RUNTIME_BACKEND_UNAVAILABLE"');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('runtime-only capture commands report runtime backend unavailable when runtime routes are absent', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({ disableCaptureRuntimeRoutes: true });
+    try {
+      for (const args of [
+        ['captures', 'get', '--id', 'cap_1', '--backend', 'runtime', '--format', 'json'],
+        ['captures', 'export', '--backend', 'runtime', '--format', 'json'],
+        ['captures', 'tail', '--backend', 'runtime', '--format', 'ndjson'],
+      ]) {
+        const res = await runCli(['--instance', 'dummy', ...args], {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        });
+        expect(res.exitCode).not.toBe(0);
+        expect(res.stderr).toContain('"code":"RUNTIME_BACKEND_UNAVAILABLE"');
+      }
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures find rejects invalid backend values', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend();
+    try {
+      const res = await runCli(['--instance', 'dummy', 'captures', 'find', '--backend', 'bad', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(res.exitCode).not.toBe(0);
+      expect(res.stderr).toContain('"code":"UNSUPPORTED_OPERATION"');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('runtime-only capture commands reject non-runtime backend values', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend();
+    try {
+      for (const args of [
+        ['captures', 'get', '--id', 'cap_1', '--backend', 'whistle-web', '--format', 'json'],
+        ['captures', 'export', '--backend', 'whistle-web', '--format', 'json'],
+        ['captures', 'tail', '--backend', 'whistle-web', '--format', 'ndjson'],
+      ]) {
+        const res = await runCli(['--instance', 'dummy', ...args], {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        });
+        expect(res.exitCode).not.toBe(0);
+        expect(res.stderr).toContain('"code":"UNSUPPORTED_OPERATION"');
+      }
+    } finally {
+      await backend.close();
+    }
+  });
+
   it('captures get returns the requested capture id', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend();
     try {
-      const res = await runCli(['--instance', 'dummy', 'captures', 'get', '--id', 'cap_1', '--format', 'json'], {
+      const res = await runCli(['--instance', 'dummy', 'captures', 'get', '--id', 'cap_1', '--backend', 'runtime', '--format', 'json'], {
         env: {
           WHISTLE_CLI_STATE_DIR: stateDir,
           WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
@@ -61,7 +192,7 @@ describe('US3 captures (integration)', () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend();
     try {
-      const bad = await runCli(['--instance', 'dummy', 'captures', 'tail', '--format', 'json'], {
+      const bad = await runCli(['--instance', 'dummy', 'captures', 'tail', '--backend', 'runtime', '--format', 'json'], {
         env: {
           WHISTLE_CLI_STATE_DIR: stateDir,
           WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
@@ -71,7 +202,7 @@ describe('US3 captures (integration)', () => {
       expect(bad.stderr).toContain('"resource":"captures"');
       expect(bad.stderr).toContain('"code":"UNSUPPORTED_OPERATION"');
 
-      const ok = await runCli(['--instance', 'dummy', 'captures', 'tail', '--format', 'ndjson'], {
+      const ok = await runCli(['--instance', 'dummy', 'captures', 'tail', '--backend', 'runtime', '--format', 'ndjson'], {
         env: {
           WHISTLE_CLI_STATE_DIR: stateDir,
           WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
@@ -97,7 +228,7 @@ describe('US3 captures (integration)', () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend();
     try {
-      const res = await runCli(['--instance', 'dummy', 'captures', 'export', '--format', 'json'], {
+      const res = await runCli(['--instance', 'dummy', 'captures', 'export', '--backend', 'runtime', '--format', 'json'], {
         env: {
           WHISTLE_CLI_STATE_DIR: stateDir,
           WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
@@ -179,7 +310,7 @@ describe('US3 captures (integration)', () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend();
     try {
-      const res = await runCli(['--instance', 'dummy', 'capture', 'find', '--limit', '2', '--format', 'json'], {
+      const res = await runCli(['--instance', 'dummy', 'capture', 'find', '--limit', '2', '--backend', 'runtime', '--format', 'json'], {
         env: {
           WHISTLE_CLI_STATE_DIR: stateDir,
           WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,

@@ -10,7 +10,7 @@ Use this skill to operate the `whistle-cli` command-line tool in a deterministic
 ## Preconditions
 
 - The environment can run local shell commands.
-- Prefer machine-readable output: always pass `--format json`.
+- Prefer machine-readable output: pass `--format json` unless a streaming command explicitly requires `--format ndjson`.
 
 ## Primary Strategy (Resource-First)
 
@@ -21,7 +21,8 @@ Use this skill to operate the `whistle-cli` command-line tool in a deterministic
 
 ## Output Contract
 
-- Always parse stdout as a single JSON envelope.
+- For `--format json`, parse stdout as a single JSON envelope.
+- For `--format ndjson`, parse each stdout line as an event envelope.
 - Use these fields for control flow:
   - `status`: `ok | warning | error | blocked`
   - `error.code`: stable machine-readable reason
@@ -43,6 +44,24 @@ Use this skill to operate the `whistle-cli` command-line tool in a deterministic
 
 - `whistle-cli --format json rules patch --id <id> --file <path> --preview`
 - `whistle-cli --format json rules apply --id <id> --file <path> --apply --verify`
+
+### Runtime Header Injection Workflow
+
+For live request-header changes, prefer runtime commands over direct storage edits:
+
+1. Check Whistle:
+   - `whistle-cli --format json instance status`
+2. Prepare complete runtime rules in a file.
+3. Apply and verify runtime default rules:
+   - `whistle-cli --format json rules default apply --file ./rules.txt --apply --verify`
+4. Assert live traffic receives the header:
+   - `whistle-cli --format json captures assert-header --host app.example.com --header env --equals pre_release --duration 60s`
+5. If the assertion reports `OVERRIDDEN`, diagnose matching rules:
+   - `whistle-cli --format json rules diagnose-conflicts --header env --url https://app.example.com/api/example`
+6. Use continuous monitoring only when a human is actively debugging:
+   - `whistle-cli --format ndjson captures watch --host app.example.com --expect-header env=pre_release --watch`
+
+Do not edit Whistle storage files for live rule changes unless the CLI runtime commands are unavailable and the user explicitly accepts that Whistle may need a reload.
 
 ### Raw fallback
 

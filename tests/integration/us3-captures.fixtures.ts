@@ -5,7 +5,38 @@ export interface FakeCaptureBackend {
   close: () => Promise<void>;
 }
 
-export async function startFakeCaptureBackend(): Promise<FakeCaptureBackend> {
+export interface FakeCaptureBackendOptions {
+  failRulesAdd?: boolean;
+  mismatchDefaultRulesOnAdd?: boolean;
+  initialDefaultRulesIsDisabled?: boolean;
+  ignoreDefaultStateChange?: boolean;
+  failRestoreAfterMismatch?: boolean;
+  failDefaultStateToggleAfterAdd?: boolean;
+  failGetData?: boolean;
+  disableCaptureRuntimeRoutes?: boolean;
+  nativeCaptureData?: Record<string, any>;
+}
+
+export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions): Promise<FakeCaptureBackend> {
+  let defaultRules = 'example.com reqHeaders://x-old=1\n';
+  let defaultRulesIsDisabled = Boolean(opts?.initialDefaultRulesIsDisabled);
+  let mismatchWritesRemaining = opts?.mismatchDefaultRulesOnAdd ? 1 : 0;
+  let failNextRulesAdd = false;
+  let stateToggleFailuresRemaining = 0;
+  let stateToggleFailureTriggered = false;
+
+  async function readBody(req: http.IncomingMessage): Promise<string> {
+    return await new Promise((resolve, reject) => {
+      let buf = '';
+      req.setEncoding('utf8');
+      req.on('data', (chunk) => {
+        buf += chunk;
+      });
+      req.on('end', () => resolve(buf));
+      req.on('error', reject);
+    });
+  }
+
   async function readJson(req: http.IncomingMessage): Promise<any> {
     return await new Promise((resolve, reject) => {
       let buf = '';
@@ -29,7 +60,114 @@ export async function startFakeCaptureBackend(): Promise<FakeCaptureBackend> {
     const u = new URL(req.url ?? '/', 'http://localhost');
     res.setHeader('content-type', 'application/json; charset=utf-8');
 
-    if (u.pathname === '/__whistle_cli__/captures/find') {
+    if (u.pathname === '/cgi-bin/rules/list') {
+      res.statusCode = 200;
+      res.end(JSON.stringify({ ec: 0, defaultRules, defaultRulesIsDisabled, list: [] }));
+      return;
+    }
+
+    if (u.pathname === '/cgi-bin/rules/enable-default') {
+      void readBody(req)
+        .then((body) => {
+          const params = new URLSearchParams(body);
+          defaultRules = params.get('value') ?? '';
+          if (!opts?.ignoreDefaultStateChange) {
+            defaultRulesIsDisabled = false;
+          }
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ec: 0 }));
+        })
+        .catch(() => {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ec: 1, error: 'bad_form' }));
+        });
+      return;
+    }
+
+    if (u.pathname === '/cgi-bin/rules/disable-default') {
+      if (stateToggleFailuresRemaining > 0) {
+        stateToggleFailuresRemaining--;
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ec: 1, em: 'failed to disable default rules' }));
+        return;
+      }
+      if (!opts?.ignoreDefaultStateChange) {
+        defaultRulesIsDisabled = true;
+      }
+      res.statusCode = 200;
+      res.end(JSON.stringify({ ec: 0 }));
+      return;
+    }
+
+    if (u.pathname === '/cgi-bin/rules/add' && req.method === 'POST') {
+      void readBody(req)
+        .then((body) => {
+          const params = new URLSearchParams(body);
+          if (opts?.failRulesAdd) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ec: 1, em: 'failed to add default rules' }));
+            return;
+          }
+          if (failNextRulesAdd) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ec: 1, em: 'failed to restore default rules' }));
+            return;
+          }
+          if (params.get('name') === 'Default') {
+            const value = params.get('value') ?? '';
+            const shouldMismatch = mismatchWritesRemaining > 0;
+            defaultRules = shouldMismatch ? `${value}# rewritten by backend\n` : value;
+            mismatchWritesRemaining = Math.max(0, mismatchWritesRemaining - 1);
+            if (shouldMismatch && opts?.failRestoreAfterMismatch) {
+              failNextRulesAdd = true;
+            }
+            if (opts?.failDefaultStateToggleAfterAdd && !stateToggleFailureTriggered) {
+              stateToggleFailuresRemaining = 1;
+              stateToggleFailureTriggered = true;
+            }
+            if (!opts?.ignoreDefaultStateChange) {
+              defaultRulesIsDisabled = params.get('selected') === 'false';
+            }
+          }
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ec: 0 }));
+        })
+        .catch(() => {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ec: 1, error: 'bad_form' }));
+        });
+      return;
+    }
+
+    if (u.pathname === '/cgi-bin/get-data') {
+      if (opts?.failGetData) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ ec: 1, em: 'get-data unavailable' }));
+        return;
+      }
+      const defaultData = {
+        n1: {
+          id: 'n1',
+          startTime: 1700000000000,
+          url: 'https://example.com/api/ok',
+          req: {
+            method: 'GET',
+            headers: { host: 'example.com', 'x-env': 'staging' },
+          },
+          res: { statusCode: 200 },
+          rules: { rule: { matcher: 'example.com', raw: 'example.com reqHeaders://x-env=staging' } },
+          rulesHeaders: {},
+        },
+      };
+      const dumpCount = Number(u.searchParams.get('dumpCount') ?? '');
+      const entries = Object.entries(opts?.nativeCaptureData ?? defaultData);
+      const data = Object.fromEntries(Number.isFinite(dumpCount) && dumpCount > 0 ? entries.slice(0, dumpCount) : entries);
+      res.statusCode = 200;
+      res.end(JSON.stringify({ ec: 0, data: { data, newIds: Object.keys(data) } }));
+      return;
+    }
+
+    if (!opts?.disableCaptureRuntimeRoutes && u.pathname === '/__whistle_cli__/captures/find') {
       const keyword = u.searchParams.get('keyword') ?? '';
       const host = u.searchParams.get('host') ?? '';
       const method = u.searchParams.get('method') ?? '';
@@ -50,6 +188,7 @@ export async function startFakeCaptureBackend(): Promise<FakeCaptureBackend> {
           host: host || 'example.com',
           path: '/api/hello',
           statusCode: 200,
+          headers: { host: host || 'example.com', 'X-Env': 'staging' },
         },
         {
           id: 'cap_2',
@@ -59,6 +198,7 @@ export async function startFakeCaptureBackend(): Promise<FakeCaptureBackend> {
           host: host || 'example.com',
           path: '/api/world',
           statusCode: 201,
+          request_headers: { host: host || 'example.com', 'x-env': 'staging' },
         },
       ];
 
@@ -67,13 +207,13 @@ export async function startFakeCaptureBackend(): Promise<FakeCaptureBackend> {
       return;
     }
 
-    if (u.pathname === '/__whistle_cli__/captures/export') {
+    if (!opts?.disableCaptureRuntimeRoutes && u.pathname === '/__whistle_cli__/captures/export') {
       res.statusCode = 200;
       res.end(JSON.stringify({ exported: true, file_path: '/tmp/captures.json' }));
       return;
     }
 
-    if (u.pathname === '/__whistle_cli__/captures/tail') {
+    if (!opts?.disableCaptureRuntimeRoutes && u.pathname === '/__whistle_cli__/captures/tail') {
       res.statusCode = 200;
       res.setHeader('content-type', 'application/x-ndjson; charset=utf-8');
       const items = [
@@ -147,7 +287,7 @@ export async function startFakeCaptureBackend(): Promise<FakeCaptureBackend> {
       return;
     }
 
-    if (u.pathname === '/__whistle_cli__/captures/get') {
+    if (!opts?.disableCaptureRuntimeRoutes && u.pathname === '/__whistle_cli__/captures/get') {
       const id = u.searchParams.get('id') ?? 'unknown';
       res.statusCode = 200;
       res.end(

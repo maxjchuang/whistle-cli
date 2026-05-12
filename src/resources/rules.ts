@@ -48,6 +48,13 @@ async function runRulesRollback(
         const out = await service.setEnabled(file_id, prev_enabled, resolved.id);
         return { rolled_back: true, kind: 'enabled', file_id, prev_enabled, result: out };
       }
+      if (h.type === 'rules.default') {
+        const prev_text = String(h.prev_text ?? '');
+        const prev_disabled = Boolean(h.prev_disabled);
+        const instanceId = typeof h.instanceId === 'string' ? h.instanceId : resolved.id;
+        const out = await service.applyRuntimeDefaultRules(prev_text, instanceId, { verify: true, selected: !prev_disabled });
+        return { rolled_back: true, kind: 'default', prev_disabled, result: out };
+      }
 
       throw new CliError({
         code: 'UNSUPPORTED_OPERATION',
@@ -66,6 +73,97 @@ export function registerRulesResource(program: Command): void {
   const rules = program.command('rules').description('Manage Whistle rules');
   const service = new RulesService();
   const executor = new ActionExecutor();
+  const defaultRules = rules.command('default').description('Manage runtime default Whistle rules');
+
+  defaultRules
+    .command('get')
+    .description('Get runtime default rules from Whistle Web')
+    .action(async () => {
+      const opts = program.opts();
+      const format = opts.format ?? 'json';
+      const resolved = await resolveInstanceId(opts.instance);
+      const action = 'default-get';
+
+      try {
+        const data = await service.getRuntimeDefaultRules(resolved.id);
+        process.stdout.write(renderEnvelope(okEnvelope('rules', action, data, { instance: resolved, effective: true }), format));
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.exitCode = 1;
+      }
+    });
+
+  defaultRules
+    .command('apply')
+    .description('Apply runtime default rules through Whistle Web')
+    .requiredOption('--file <path>', 'Path to complete default rules text')
+    .option('--preview', 'Preview without applying')
+    .option('--apply', 'Apply the change')
+    .option('--verify', 'Verify after apply')
+    .action(async (cmdOpts: { file: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
+      const opts = program.opts();
+      const format = opts.format ?? 'json';
+      const resolved = await resolveInstanceId(opts.instance);
+      const action = 'default-apply';
+      const pav = resolvePavFlags(cmdOpts);
+
+      try {
+        const text = await fs.readFile(cmdOpts.file, 'utf8');
+        const result = await executor.execute(
+          { resource: 'rules', action, instance: resolved },
+          pav,
+          {
+            preview: async () => ({ backend: 'whistle-web' as const, bytes: Buffer.byteLength(text, 'utf8') }),
+            apply: async () => {
+              const before = await service.getRuntimeDefaultRules(resolved.id);
+              return {
+                result: await service.applyRuntimeDefaultRules(text, resolved.id, { verify: pav.verify, selected: true }),
+                rollback: { type: 'rules.default', prev_text: before.source_text, prev_disabled: before.disabled, instanceId: resolved.id },
+              };
+            },
+            verify: async () => service.getRuntimeDefaultRules(resolved.id),
+          },
+        );
+
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope('rules', action, result, {
+              instance: resolved,
+              effective: pav.apply ? true : false,
+              meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
+            }),
+            format,
+          ),
+        );
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.exitCode = 1;
+      }
+    });
+
+  rules
+    .command('diagnose-conflicts')
+    .description('Diagnose matching reqHeaders rules for one request header')
+    .requiredOption('--header <name>', 'Request header name to diagnose')
+    .requiredOption('--url <url>', 'Request URL to match against runtime default rules')
+    .action(async (cmdOpts: { header: string; url: string }) => {
+      const opts = program.opts();
+      const format = opts.format ?? 'json';
+      const resolved = await resolveInstanceId(opts.instance);
+      const action = 'diagnose-conflicts';
+
+      try {
+        const data = await service.diagnoseHeaderConflicts({ header: cmdOpts.header, url: cmdOpts.url, instanceId: resolved.id });
+        process.stdout.write(renderEnvelope(okEnvelope('rules', action, data, { instance: resolved, effective: !data.conflict }), format));
+        if (data.conflict) process.exitCode = 1;
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.exitCode = 1;
+      }
+    });
 
   rules
     .command('rollback')

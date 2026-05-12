@@ -85,11 +85,11 @@ tests/
 
 - `whistle` is currently published on npm as version `2.10.2` and exposes `whistle`, `w2`, and `wproxy` binaries from one package.
 - Official Whistle materials confirm the core surface needed by this feature: lifecycle, CA/proxy setup, rules, values, network capture, composer-like replay/editing, plugins, and mobile/headless usage.
-- The prior Lark design discussion resolved the key product/architecture questions:
+- The prior CLI design discussion resolved the key product/architecture questions:
   - local-first individual developer debugging is the primary use case
   - semantic facade (`Approach 2`) is the preferred CLI shape
   - implementation should still ride on existing Whistle mechanisms for v1
-  - the product should mirror `larksuite/cli` structurally, but with Whistle-specific capture and diagnosis depth
+  - the product should mirror a lightweight operational CLI structurally, but with Whistle-specific capture and diagnosis depth
   - plugin capability standardization is deferred, though the architecture should reserve the contract
 
 ## Phase 1: Design Outputs

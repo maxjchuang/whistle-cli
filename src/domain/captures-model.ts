@@ -1,4 +1,5 @@
 export type CaptureProtocol = 'http' | 'https' | 'http2' | 'websocket' | 'tcp' | 'tunnel' | 'unknown';
+export type CaptureBackend = 'runtime' | 'whistle-web';
 
 export interface CaptureQueryFilters {
   host?: string;
@@ -12,6 +13,7 @@ export interface CaptureQuery {
   instance_id: string;
   filters: CaptureQueryFilters;
   limit: number;
+  backend?: 'auto' | CaptureBackend;
 }
 
 export interface CaptureTiming {
@@ -23,6 +25,7 @@ export interface CaptureTiming {
 export interface CaptureRecord {
   capture_id: string;
   instance_id: string;
+  backend?: CaptureBackend;
   protocol: CaptureProtocol;
   method?: string;
   url?: string;
@@ -30,8 +33,37 @@ export interface CaptureRecord {
   path?: string;
   status_code?: number;
   timing?: CaptureTiming;
-  // Note: matched_rules / full headers/bodies are intentionally omitted in v1 model until
-  // a stable backend representation is finalized.
+  request_headers?: Record<string, string>;
+  matched_rules?: unknown;
+}
+
+export type HeaderAssertionClassification = 'OK' | 'OVERRIDDEN' | 'MISS' | 'NO_TRAFFIC';
+
+export interface HeaderAssertionOptions {
+  header: string;
+  equals: string;
+}
+
+export interface HeaderAssertionExample {
+  capture_id: string;
+  url?: string;
+  method?: string;
+  status_code?: number;
+  expected: string;
+  actual?: string;
+  classification: HeaderAssertionClassification;
+}
+
+export interface HeaderAssertionResult {
+  backend: CaptureBackend;
+  observed: number;
+  ok: number;
+  overridden: number;
+  miss: number;
+  no_traffic: boolean;
+  classification: HeaderAssertionClassification;
+  events: HeaderAssertionExample[];
+  examples: HeaderAssertionExample[];
 }
 
 export interface ComposeRequest {

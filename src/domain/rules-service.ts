@@ -2,8 +2,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { defaultWhistleStorageDir, type WhistleStorageLocation } from '../backends/storage/whistle-storage';
+import { WhistleWebClient } from '../backends/whistle-web';
 import { CliError } from '../output/errors';
-import type { RuleSet } from './rules-model';
+import { loadConfig } from '../shared/config';
+import { InstanceService } from './instance-service';
+import type {
+  HeaderConflictDiagnostic,
+  HeaderRuleMatch,
+  RuntimeDefaultRules,
+  RuntimeDefaultRulesApplyResult,
+  RuleSet,
+} from './rules-model';
 
 export type RulePatchMode = 'replace' | 'append';
 
@@ -60,6 +69,9 @@ function normalizeEol(s: string): string {
   return s.replace(/\r\n/g, '\n');
 }
 
+const HEADER_CONFLICT_RECOMMENDATION =
+  'Multiple matching rules set the same request header. Use a more specific matcher, remove stale rules, or make broad rules mutually exclusive.';
+
 function joinAppend(base: string, patch: string): string {
   if (!base) return patch;
   if (!patch) return base;
@@ -115,10 +127,149 @@ async function writeTextFile(filePath: string, contents: string): Promise<void> 
   await fs.writeFile(filePath, contents, 'utf8');
 }
 
+function splitHeaderPayload(payload: string): Array<{ header: string; value: string }> {
+  return payload
+    .split('&')
+    .map((entry) => {
+      const sep = entry.indexOf('=');
+      if (sep < 0) return null;
+      const header = entry.slice(0, sep).trim();
+      const value = entry.slice(sep + 1).trim();
+      if (!header) return null;
+      return { header, value };
+    })
+    .filter((entry): entry is { header: string; value: string } => Boolean(entry));
+}
+
+function findRegexLiteralEnd(pattern: string): number {
+  if (!pattern.startsWith('/')) return -1;
+  for (let i = pattern.length - 1; i > 0; i--) {
+    if (pattern[i] !== '/') continue;
+    let slashCount = 0;
+    for (let j = i - 1; j >= 0 && pattern[j] === '\\'; j--) slashCount++;
+    if (slashCount % 2 === 0) return i;
+  }
+  return -1;
+}
+
+function regexFromMatcher(pattern: string): RegExp | null {
+  const end = findRegexLiteralEnd(pattern);
+  if (end <= 0) return null;
+  const source = pattern.slice(1, end);
+  const flags = pattern.slice(end + 1);
+  if (!/^[dgimsuvy]*$/.test(flags)) return null;
+  try {
+    return new RegExp(source, flags);
+  } catch {
+    return null;
+  }
+}
+
+function matcherMatchesUrl(pattern: string, targetUrl: string): boolean {
+  const trimmed = pattern.trim();
+  if (!trimmed) return false;
+
+  const regex = regexFromMatcher(trimmed);
+  if (regex) return regex.test(targetUrl);
+
+  let parsed: URL | null = null;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    parsed = null;
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    if (!parsed) return false;
+    try {
+      const matcher = new URL(trimmed);
+      if (matcher.protocol !== parsed.protocol || matcher.host !== parsed.host) return false;
+      const matcherPathAndSearch = `${matcher.pathname}${matcher.search}`;
+      const targetPathAndSearch = `${parsed.pathname}${parsed.search}`;
+      if (matcherPathAndSearch === '/') return true;
+      return (
+        targetPathAndSearch === matcherPathAndSearch ||
+        targetPathAndSearch.startsWith(`${matcherPathAndSearch}/`) ||
+        targetPathAndSearch.startsWith(`${matcherPathAndSearch}?`) ||
+        (Boolean(matcher.search) && targetPathAndSearch.startsWith(matcherPathAndSearch))
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  if (!parsed) return targetUrl.includes(trimmed);
+
+  const hostAndPath = `${parsed.host}${parsed.pathname}`;
+  if (trimmed.startsWith('/')) return parsed.pathname === trimmed || parsed.pathname.includes(trimmed);
+  if (trimmed.includes('/')) return hostAndPath === trimmed || hostAndPath.startsWith(`${trimmed}/`);
+  return parsed.hostname === trimmed || parsed.hostname.endsWith(`.${trimmed}`);
+}
+
+function parseReqHeadersLine(raw: string): { pattern: string; headers: Array<{ header: string; value: string }> } | null {
+  const opIndex = raw.indexOf('reqHeaders://');
+  if (opIndex < 0) return null;
+
+  const pattern = raw.slice(0, opIndex).trim();
+  const payload = raw.slice(opIndex + 'reqHeaders://'.length).trim().split(/\s+/)[0] ?? '';
+  if (!pattern || !payload) return null;
+
+  return { pattern, headers: splitHeaderPayload(payload) };
+}
+
+export function diagnoseHeaderConflictsFromText(
+  text: string,
+  opts: { header: string; url: string },
+): HeaderConflictDiagnostic {
+  const header = opts.header.trim();
+  const normalizedHeader = header.toLowerCase();
+  const matches: HeaderRuleMatch[] = [];
+
+  normalizeEol(text)
+    .split('\n')
+    .forEach((rawLine, index) => {
+      const raw = rawLine.trim();
+      if (!raw || raw.startsWith('#')) return;
+
+      const parsed = parseReqHeadersLine(raw);
+      if (!parsed || !matcherMatchesUrl(parsed.pattern, opts.url)) return;
+
+      for (const item of parsed.headers) {
+        if (item.header.toLowerCase() !== normalizedHeader) continue;
+        matches.push({
+          line: index + 1,
+          pattern: parsed.pattern,
+          header: item.header,
+          value: item.value,
+          raw,
+        });
+      }
+    });
+
+  const conflict = new Set(matches.map((match) => `${match.line}:${match.raw}`)).size > 1;
+  return {
+    header,
+    url: opts.url,
+    conflict,
+    matches,
+    recommendation: conflict ? HEADER_CONFLICT_RECOMMENDATION : undefined,
+  };
+}
+
 export class RulesService {
+  private readonly instances = new InstanceService();
+
   resolveStorage(instanceId?: string): WhistleStorageLocation {
     const { baseDir, instance_id } = resolveInstanceBaseDir(instanceId);
     return { path: baseDir, source: instance_id === 'default' ? 'default' : 'candidate' };
+  }
+
+  private async whistleWebClientForInstance(instanceId?: string): Promise<WhistleWebClient> {
+    const cfg = loadConfig();
+    if (cfg.runtimeUrl) return new WhistleWebClient({ baseUrl: cfg.runtimeUrl });
+
+    const st = await this.instances.status(instanceId ?? 'default');
+    return new WhistleWebClient({ baseUrl: `http://${st.host}:${st.port}` });
   }
 
   private rulesDir(storage: WhistleStorageLocation): string {
@@ -178,6 +329,100 @@ export class RulesService {
       });
     }
     return out;
+  }
+
+  async getRuntimeDefaultRules(instanceId?: string): Promise<RuntimeDefaultRules> {
+    const client = await this.whistleWebClientForInstance(instanceId);
+    const list = await client.getRulesList();
+    return {
+      instance_id: instanceId ?? 'default',
+      backend: 'whistle-web',
+      source_text: list.defaultRules ?? '',
+      disabled: Boolean(list.defaultRulesIsDisabled),
+    };
+  }
+
+  async applyRuntimeDefaultRules(
+    text: string,
+    instanceId?: string,
+    opts?: { verify?: boolean; selected?: boolean },
+  ): Promise<RuntimeDefaultRulesApplyResult> {
+    const client = await this.whistleWebClientForInstance(instanceId);
+    const before = await client.getRulesList();
+    const beforeText = before.defaultRules ?? '';
+    const beforeDisabled = Boolean(before.defaultRulesIsDisabled);
+    await client.applyDefaultRules(text, { selected: opts?.selected });
+    try {
+      if (opts?.selected === false) await client.disableDefaultRules();
+    } catch (e) {
+      throw await this.restoreAndRethrowRuntimeDefaultRulesFailure(client, beforeText, beforeDisabled, e);
+    }
+    const after = await client.getRulesList();
+    const afterText = after.defaultRules ?? '';
+    const afterDisabled = Boolean(after.defaultRulesIsDisabled);
+
+    const textMismatch = normalizeEol(afterText) !== normalizeEol(text);
+    const expectedDisabled = typeof opts?.selected === 'boolean' ? !opts.selected : undefined;
+    const stateMismatch = typeof expectedDisabled === 'boolean' && afterDisabled !== expectedDisabled;
+
+    if (opts?.verify && (textMismatch || stateMismatch)) {
+      const restoreFailure = await this.tryRestoreRuntimeDefaultRules(client, beforeText, beforeDisabled);
+      throw new CliError({
+        code: 'RULE_RUNTIME_VERIFY_FAILED',
+        message: 'Runtime default rules verification failed',
+        reason: [
+          textMismatch ? 'Whistle Web API returned default rules that differ from the requested content.' : undefined,
+          stateMismatch ? `Whistle Web API returned defaultRulesIsDisabled=${afterDisabled}, expected ${expectedDisabled}.` : undefined,
+          restoreFailure ? `Restore failed: ${restoreFailure}` : undefined,
+        ].filter(Boolean).join(' '),
+        suggested_fix: 'Re-run `whistle-cli rules default get` and inspect the active runtime rules before applying again.',
+      });
+    }
+
+    return {
+      backend: 'whistle-web',
+      changed: normalizeEol(beforeText) !== normalizeEol(afterText) || beforeDisabled !== afterDisabled,
+      verified: Boolean(opts?.verify),
+      before_sha256: sha256Hex(normalizeEol(beforeText)),
+      after_sha256: sha256Hex(normalizeEol(afterText)),
+    };
+  }
+
+  async diagnoseHeaderConflicts(opts: { header: string; url: string; instanceId?: string }): Promise<HeaderConflictDiagnostic> {
+    const rules = await this.getRuntimeDefaultRules(opts.instanceId);
+    return diagnoseHeaderConflictsFromText(rules.source_text, { header: opts.header, url: opts.url });
+  }
+
+  private async restoreRuntimeDefaultRules(client: WhistleWebClient, text: string, disabled: boolean): Promise<void> {
+    await client.applyDefaultRules(text, { selected: !disabled });
+    if (disabled) await client.disableDefaultRules();
+  }
+
+  private async tryRestoreRuntimeDefaultRules(client: WhistleWebClient, text: string, disabled: boolean): Promise<string | undefined> {
+    try {
+      await this.restoreRuntimeDefaultRules(client, text, disabled);
+      return undefined;
+    } catch (e) {
+      const err = CliError.fromUnknown(e);
+      return `${err.details.code}: ${err.details.message}${err.details.reason ? ` (${err.details.reason})` : ''}`;
+    }
+  }
+
+  private async restoreAndRethrowRuntimeDefaultRulesFailure(
+    client: WhistleWebClient,
+    beforeText: string,
+    beforeDisabled: boolean,
+    failure: unknown,
+  ): Promise<CliError> {
+    const err = CliError.fromUnknown(failure);
+    const restoreFailure = await this.tryRestoreRuntimeDefaultRules(client, beforeText, beforeDisabled);
+    return new CliError(
+      {
+        ...err.details,
+        reason: [err.details.reason, restoreFailure ? `Restore failed: ${restoreFailure}` : undefined].filter(Boolean).join(' '),
+      },
+      err,
+    );
   }
 
   async findByName(name: string, instanceId?: string): Promise<RuleSet | null> {

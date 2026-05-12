@@ -24,7 +24,7 @@
 
 - Decision: Organize the CLI into `shortcuts/skills`, `resource commands`, and `mirror/raw` commands.
 - Rationale:
-  - The prior design discussion converged on `larksuite/cli` as the reference shape: lightweight operational surface, not a heavy platform.
+  - The prior design discussion converged on a lightweight operational CLI as the reference shape, not a heavy platform.
   - AI needs stable resource/action semantics, while human operators still need raw escape hatches for complete Whistle coverage.
   - This keeps the semantic surface predictable without losing access to long-tail Whistle capabilities.
 - Alternatives considered:
@@ -72,7 +72,7 @@
 - Rationale:
   - The main product is an AI-friendly control plane, not just a terminal UX.
   - Typed result envelopes allow AI to distinguish warnings, blocked flows, verification failures, and recoverable errors without log scraping.
-  - This follows the same operational philosophy that made `larksuite/cli` usable for agent workflows.
+  - This follows the same operational philosophy that makes lightweight CLIs usable for agent workflows.
 - Alternatives considered:
   - Human-first stdout with best-effort parsing: brittle for AI and difficult to version safely.
 
@@ -82,7 +82,7 @@
 - Rationale:
   - The design discussion explicitly rejected an overly heavy “platform” architecture.
   - Whistle still needs diagnosis for certificates, proxy routing, and capture availability, but those capabilities should stay close to the resources they explain.
-  - Shared mechanisms keep the surface closer to `larksuite/cli` while preserving Whistle-specific guidance.
+  - Shared mechanisms keep the surface close to a lightweight operational CLI while preserving Whistle-specific guidance.
 - Alternatives considered:
   - A standalone diagnostics subsystem: too heavy for the first release.
   - No diagnostic layer: leaves AI to guess at proxy/certificate failures.

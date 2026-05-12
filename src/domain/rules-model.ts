@@ -39,3 +39,33 @@ export interface RulePatch {
   verification_plan?: string;
 }
 
+export interface RuntimeDefaultRules {
+  instance_id: string;
+  backend: 'whistle-web';
+  source_text: string;
+  disabled: boolean;
+}
+
+export interface RuntimeDefaultRulesApplyResult {
+  backend: 'whistle-web';
+  changed: boolean;
+  verified: boolean;
+  before_sha256: string;
+  after_sha256: string;
+}
+
+export interface HeaderRuleMatch {
+  line: number;
+  pattern: string;
+  header: string;
+  value: string;
+  raw: string;
+}
+
+export interface HeaderConflictDiagnostic {
+  header: string;
+  url: string;
+  conflict: boolean;
+  matches: HeaderRuleMatch[];
+  recommendation?: string;
+}

@@ -5,9 +5,7 @@ import fs from 'node:fs/promises';
 import { execa } from 'execa';
 
 describe('skill install smoke', () => {
-  it(
-    'installs the repository-local skill into a skills directory',
-    async () => {
+  it('installs the repository-local skill into a skills directory', async () => {
     const repoRoot = path.resolve(__dirname, '..', '..');
     const tmpSkillsRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'whistle-cli-skills-'));
     try {
@@ -27,6 +25,10 @@ describe('skill install smoke', () => {
       expect(skillMd).toContain('description: Use when operating Whistle through whistle-cli');
       expect(skillMd).toContain('--format json');
       expect(skillMd).toContain('Resource-First');
+      expect(skillMd).toContain('rules default apply');
+      expect(skillMd).toContain('captures assert-header');
+      expect(skillMd).toContain('rules diagnose-conflicts');
+      expect(skillMd).toContain('Do not edit Whistle storage files for live rule changes');
 
       const openAiYaml = await fs.readFile(path.join(skillDir, 'agents', 'openai.yaml'), 'utf8');
       expect(openAiYaml).toContain('display_name: "whistle-cli"');
@@ -34,7 +36,5 @@ describe('skill install smoke', () => {
     } finally {
       await fs.rm(tmpSkillsRoot, { recursive: true, force: true });
     }
-    },
-    30_000,
-  );
+  }, 30_000);
 });

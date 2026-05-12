@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning  
 **Created**: 2026-04-28  
-**Feature**: [spec.md](/Users/bytedance/Projects/github/whistle-cli/specs/001-whistle-cli-ai/spec.md)
+**Feature**: [spec.md](../spec.md)
 
 ## Content Quality
 
