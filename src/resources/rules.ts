@@ -144,6 +144,28 @@ export function registerRulesResource(program: Command): void {
     });
 
   rules
+    .command('diagnose-conflicts')
+    .description('Diagnose matching reqHeaders rules for one request header')
+    .requiredOption('--header <name>', 'Request header name to diagnose')
+    .requiredOption('--url <url>', 'Request URL to match against runtime default rules')
+    .action(async (cmdOpts: { header: string; url: string }) => {
+      const opts = program.opts();
+      const format = opts.format ?? 'json';
+      const resolved = await resolveInstanceId(opts.instance);
+      const action = 'diagnose-conflicts';
+
+      try {
+        const data = await service.diagnoseHeaderConflicts({ header: cmdOpts.header, url: cmdOpts.url, instanceId: resolved.id });
+        process.stdout.write(renderEnvelope(okEnvelope('rules', action, data, { instance: resolved, effective: !data.conflict }), format));
+        if (data.conflict) process.exitCode = 1;
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.exitCode = 1;
+      }
+    });
+
+  rules
     .command('rollback')
     .description('Rollback a previously logged rules mutation')
     .requiredOption('--action-id <id>', 'Action id to rollback')

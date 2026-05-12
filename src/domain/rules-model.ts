@@ -53,3 +53,19 @@ export interface RuntimeDefaultRulesApplyResult {
   before_sha256: string;
   after_sha256: string;
 }
+
+export interface HeaderRuleMatch {
+  line: number;
+  pattern: string;
+  header: string;
+  value: string;
+  raw: string;
+}
+
+export interface HeaderConflictDiagnostic {
+  header: string;
+  url: string;
+  conflict: boolean;
+  matches: HeaderRuleMatch[];
+  recommendation?: string;
+}
