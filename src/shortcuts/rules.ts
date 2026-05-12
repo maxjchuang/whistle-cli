@@ -49,12 +49,38 @@ function hostFromMatch(match: string): string | undefined {
   const direct = raw.match(/^https?:\/\/([^/?#\s]+)/i);
   if (direct?.[1]) return direct[1];
 
-  const marker = raw.match(/https:\\?\/\\?\/(.+)$/i);
+  let source = raw;
+  if (raw.startsWith('/')) {
+    for (let i = raw.length - 1; i > 0; i--) {
+      if (raw[i] !== '/') continue;
+      let slashCount = 0;
+      for (let j = i - 1; j >= 0 && raw[j] === '\\'; j--) slashCount++;
+      if (slashCount % 2 === 0) {
+        source = raw.slice(1, i);
+        break;
+      }
+    }
+  }
+  source = source.replace(/^\^/, '');
+
+  const marker = source.match(/https?\??:\\?\/\\?\/(.+)$/i);
   if (!marker?.[1]) return undefined;
 
   const hostLike = marker[1].split(/(?:\\?\/|\/|\\\?|[/?#\s$()[\]{}+*])/)[0];
   const host = unescapeRegexHost(hostLike).replace(/\^/g, '').trim();
   return host || undefined;
+}
+
+function planRuntimeAppend(currentSourceText: string, ruleLine: string): {
+  backend: 'whistle-web';
+  append: string;
+  next_source_text: string;
+} {
+  return {
+    backend: 'whistle-web',
+    append: ruleLine,
+    next_source_text: `${currentSourceText.trimEnd()}\n${ruleLine}`,
+  };
 }
 
 function normalizeHeaderPairs(headers: string[]): string {
@@ -146,14 +172,7 @@ export function registerRulesShortcuts(program: Command): void {
           const ruleLine = buildRuleLine(cmdOpts.match, `reqHeaders://${payload}`);
 
           if (cmdOpts.runtimeDefault) {
-            const current = await rules.getRuntimeDefaultRules(resolved.id);
-            const next = `${current.source_text.trimEnd()}\n${ruleLine}`;
-            const runtime = await rules.applyRuntimeDefaultRules(next, resolved.id, {
-              verify: Boolean(cmdOpts.verify),
-              selected: true,
-            });
-            let live_verification: Awaited<ReturnType<CapturesService['assertHeader']>> | undefined;
-
+            let verificationInput: { header: string; equals: string; host: string } | undefined;
             if (cmdOpts.verifyLive) {
               const firstHeader = cmdOpts.header[0];
               if (!firstHeader) {
@@ -169,12 +188,29 @@ export function registerRulesShortcuts(program: Command): void {
                   code: 'UNSUPPORTED_OPERATION',
                   message: 'Unable to derive host from --match for live verification',
                   reason: `Match pattern: ${cmdOpts.match}`,
-                  suggested_fix: 'Use a matcher that includes an https:// host, such as /^https:\\/\\/example\\.com\\//.',
+                  suggested_fix: 'Use a matcher that includes an http(s) host, such as /^https:\\/\\/example\\.com\\//.',
                 });
               }
+              verificationInput = { header, equals, host };
+            }
+
+            const current = await rules.getRuntimeDefaultRules(resolved.id);
+            const preview = pav.preview ? planRuntimeAppend(current.source_text, ruleLine) : undefined;
+            let runtime: Awaited<ReturnType<RulesService['applyRuntimeDefaultRules']>> | undefined;
+            let live_verification: Awaited<ReturnType<CapturesService['assertHeader']>> | undefined;
+
+            if (pav.apply) {
+              const next = preview?.next_source_text ?? planRuntimeAppend(current.source_text, ruleLine).next_source_text;
+              runtime = await rules.applyRuntimeDefaultRules(next, resolved.id, {
+                verify: Boolean(cmdOpts.verify),
+                selected: true,
+              });
+            }
+
+            if (pav.apply && verificationInput) {
               live_verification = await captures.assertHeader(
-                { instance_id: resolved.id, filters: { host }, limit: 200 },
-                { header, equals, durationMs: parseDurationMs(cmdOpts.duration) },
+                { instance_id: resolved.id, filters: { host: verificationInput.host }, limit: 200 },
+                { header: verificationInput.header, equals: verificationInput.equals, durationMs: parseDurationMs(cmdOpts.duration) },
               );
             }
 
@@ -183,11 +219,12 @@ export function registerRulesShortcuts(program: Command): void {
                 okEnvelope(
                   'rules',
                   action,
-                  { runtime, live_verification },
+                  { preview, runtime, live_verification },
                   {
                     instance: resolved,
-                    effective: !live_verification || live_verification.classification === 'OK',
-                    meta: { verified: Boolean(cmdOpts.verify), live_verified: Boolean(cmdOpts.verifyLive) } as {
+                    effective: pav.apply && (!live_verification || live_verification.classification === 'OK'),
+                    meta: { preview: pav.preview, verified: Boolean(cmdOpts.verify), live_verified: Boolean(live_verification) } as {
+                      preview: boolean;
                       verified: boolean;
                       live_verified: boolean;
                     },
