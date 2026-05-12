@@ -18,4 +18,15 @@ describe('rule header conflict diagnosis', () => {
     expect(result.matches.length).toBe(2);
     expect(result.matches.map((m) => m.value)).toEqual(['wide', 'specific']);
   });
+
+  it('does not flag duplicate assignments from a single matching rule as a conflict', () => {
+    const result = diagnoseHeaderConflictsFromText('example.com reqHeaders://x-env=a&x-env=b', {
+      header: 'x-env',
+      url: 'https://example.com/api/widgets/123/trigger',
+    });
+
+    expect(result.conflict).toBe(false);
+    expect(result.matches.length).toBe(2);
+    expect(result.matches.map((m) => m.value)).toEqual(['a', 'b']);
+  });
 });

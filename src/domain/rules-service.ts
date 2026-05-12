@@ -231,7 +231,7 @@ export function diagnoseHeaderConflictsFromText(
       }
     });
 
-  const conflict = matches.length > 1;
+  const conflict = new Set(matches.map((match) => `${match.line}:${match.raw}`)).size > 1;
   return {
     header,
     url: opts.url,
