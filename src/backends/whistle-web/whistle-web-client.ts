@@ -22,7 +22,7 @@ export interface WhistleApplyResponse {
 export interface WhistleGetDataResponse {
   ec?: number;
   data?: {
-    data?: Record<string, any>;
+    data?: Record<string, unknown>;
     ids?: string[];
     newIds?: string[];
     lastId?: string;
@@ -36,7 +36,7 @@ export class WhistleWebClient {
   private readonly timeoutMs: number;
 
   constructor(opts: WhistleWebClientOptions) {
-    this.baseUrl = opts.baseUrl.replace(/\/$/, '');
+    this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.timeoutMs = opts.timeoutMs ?? 10_000;
   }
 

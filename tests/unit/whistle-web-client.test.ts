@@ -45,14 +45,21 @@ describe('WhistleWebClient', () => {
 
   it('applies default rules with a form post to /cgi-bin/rules/add', async () => {
     const baseUrl = await startServer((req, res) => {
-      expect(req.method).toBe('POST');
-      expect(req.url).toBe('/cgi-bin/rules/add');
-      void readBody(req).then((body) => {
-        expect(body).toContain('name=Default');
-        expect(decodeURIComponent(body)).toContain('example.com reqHeaders://x-test=1');
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ ec: 0 }));
-      });
+      void (async () => {
+        try {
+          expect(req.method).toBe('POST');
+          expect(req.url).toBe('/cgi-bin/rules/add');
+          expect(req.headers['content-type']).toContain('application/x-www-form-urlencoded');
+          const body = await readBody(req);
+          expect(body).toContain('name=Default');
+          expect(decodeURIComponent(body)).toContain('example.com reqHeaders://x-test=1');
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ ec: 0 }));
+        } catch (err) {
+          res.statusCode = 500;
+          res.end(err instanceof Error ? err.message : String(err));
+        }
+      })();
     });
 
     const client = new WhistleWebClient({ baseUrl });
@@ -76,6 +83,18 @@ describe('WhistleWebClient', () => {
     const baseUrl = await startServer((_req, res) => {
       res.statusCode = 500;
       res.end('broken');
+    });
+
+    const client = new WhistleWebClient({ baseUrl });
+    await expect(client.getRulesList()).rejects.toMatchObject({
+      details: { code: 'WHISTLE_WEB_UNAVAILABLE' },
+    });
+  });
+
+  it('maps invalid JSON responses to WHISTLE_WEB_UNAVAILABLE', async () => {
+    const baseUrl = await startServer((_req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end('{not json');
     });
 
     const client = new WhistleWebClient({ baseUrl });
