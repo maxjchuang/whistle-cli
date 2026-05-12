@@ -28,10 +28,11 @@
     "whistle-cli": "dist/cli/index.js"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "./scripts/node ./node_modules/typescript/bin/tsc -p tsconfig.json && ./scripts/node -e \"const fs=require('fs');const p='dist/cli/index.js';let s=fs.readFileSync(p,'utf8');if(!s.startsWith('#!/usr/bin/env node\\n')){s='#!/usr/bin/env node\\n'+s;fs.writeFileSync(p,s,'utf8');}fs.chmodSync(p,0o755);\"",
+    "build": "rm -rf dist && ./scripts/node ./node_modules/typescript/bin/tsc -p tsconfig.json && ./scripts/node -e \"const fs=require('fs');const p='dist/cli/index.js';let s=fs.readFileSync(p,'utf8');if(!s.startsWith('#!/usr/bin/env node\\n')){s='#!/usr/bin/env node\\n'+s;fs.writeFileSync(p,s,'utf8');}fs.chmodSync(p,0o755);\"",
     "dev": "./scripts/node ./node_modules/tsx/dist/cli.mjs src/cli/index.ts",
     "lint": "./scripts/node ./node_modules/eslint/bin/eslint.js .",
     "format": "./scripts/node ./node_modules/prettier/bin/prettier.cjs -w .",

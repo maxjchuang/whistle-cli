@@ -4,6 +4,12 @@ Canonical path: `skills/whistle-cli/`
 
 ## Install
 
+From the public GitHub repository:
+
+```bash
+skills add https://github.com/maxjchuang/whistle-cli --skill whistle-cli
+```
+
 Use the helper script:
 
 ```bash
@@ -37,4 +43,3 @@ Example:
 
 - Skill checkout: `0.x`
 - Installed CLI: `1.x`  -> reinstall `0.x` (or switch skill checkout)
-

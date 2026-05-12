@@ -7,7 +7,7 @@
 
 ## Summary
 
-Publish `whistle-cli` as an installable npm package and ship a repository-distributed skill that lets AI agents use the CLI consistently. The plan focuses on release readiness, version compatibility policy (CLI/skill same major only), install/upgrade guidance, and verification gates that prove package and skill usability in clean environments.
+Publish `whistle-cli` as an installable npm package and ship a repository-distributed skill that lets AI agents use the CLI consistently. The skill must be installable from the public GitHub repository via `skills add https://github.com/maxjchuang/whistle-cli --skill whistle-cli` and from a local checkout. The plan focuses on release readiness, version compatibility policy (CLI/skill same major only), install/upgrade guidance, and verification gates that prove package and skill usability in clean environments.
 
 ## Technical Context
 
@@ -18,7 +18,7 @@ Publish `whistle-cli` as an installable npm package and ship a repository-distri
 **Target Platform**: macOS and Linux (CLI runtime), agent environments with local command execution  
 **Project Type**: Single-project CLI with distributable skill assets  
 **Performance Goals**: Package install + `whistle-cli --help` runnable within 10 minutes for first-time users; release verification script completes within 5 minutes in CI-like local run  
-**Constraints**: v1 distribution channels fixed to npm public registry (CLI) and repository-defined local path installation (skill); CLI/skill major versions must match  
+**Constraints**: v1 distribution channels fixed to npm public registry (CLI), GitHub repository skill installation, and repository-defined local path installation (skill); CLI/skill major versions must match
 **Scale/Scope**: One public package, one skill package path, and one release checklist for each version
 
 ## Constitution Check
@@ -72,7 +72,7 @@ tests/
 ## Phase 0: Research Summary
 
 - npm distribution in this feature should include package metadata hardening (`private` removal, files whitelist, bin entry validation) and publish-time verification.
-- Skill distribution is repository-local in v1, so installation contract must define deterministic source path and guidance for copying/linking into agent global directories.
+- Skill distribution is repository-backed in v1, so installation contract must define the public GitHub install command, deterministic local source path, and guidance for copying/linking into agent global directories.
 - Compatibility policy is strict major-match between CLI and skill versions; mismatch should fail early with explicit guidance.
 - Release verification must combine package-level install checks and skill-level agent workflow checks.
 

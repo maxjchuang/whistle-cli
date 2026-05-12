@@ -11,10 +11,10 @@ AI-friendly CLI facade over [Whistle](https://github.com/avwo/whistle).
 
 ```bash
 # Install from npm (global)
-npm i -g whistle-cli
+npm i -g whistle-cli --registry=https://registry.npmjs.org/
 
 # Upgrade
-npm i -g whistle-cli@latest
+npm i -g whistle-cli@latest --registry=https://registry.npmjs.org/
 
 # This repository (dev mode)
 npm install
@@ -38,6 +38,12 @@ npm run dev -- --format pretty instance status
 ```
 
 ## Skill (for AI agents)
+
+Install from the public GitHub repository with a compatible skills installer:
+
+```bash
+skills add https://github.com/maxjchuang/whistle-cli --skill whistle-cli
+```
 
 Install the repository-distributed skill into the default skills directory:
 

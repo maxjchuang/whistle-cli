@@ -1,3 +1,8 @@
+---
+name: whistle-cli
+description: Use when operating Whistle through whistle-cli, including instance checks, rules/values/captures/proxy/certs/plugins workflows, safe preview/apply/verify changes, raw w2 fallback, and diagnostics for agent-driven proxy setup.
+---
+
 # whistle-cli
 
 Use this skill to operate the `whistle-cli` command-line tool in a deterministic, agent-friendly way.
@@ -42,4 +47,3 @@ Use this skill to operate the `whistle-cli` command-line tool in a deterministic
 ### Raw fallback
 
 - `whistle-cli raw w2 status`
-
