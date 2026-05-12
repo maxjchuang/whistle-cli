@@ -44,6 +44,30 @@ function normalizeRuntimeCapture(raw: any, instanceId: string): CaptureRecord {
   };
 }
 
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string' && typeof value !== 'number') continue;
+    const s = String(value);
+    if (s) return s;
+  }
+  return undefined;
+}
+
+function normalizeRuntimeBackendError(e: unknown): never {
+  if (e instanceof CliError && e.details.code === 'CAPTURE_BACKEND_UNAVAILABLE') {
+    throw new CliError(
+      {
+        code: 'RUNTIME_BACKEND_UNAVAILABLE',
+        message: 'Runtime capture backend is not available',
+        reason: e.details.reason,
+        suggested_fix: 'Use the default Whistle Web backend, or start a backend that supports the whistle-cli runtime API.',
+      },
+      e,
+    );
+  }
+  throw e;
+}
+
 export function normalizeWhistleWebCapture(raw: any, instanceId: string, fallbackId?: string): CaptureRecord {
   const url = raw?.url ? String(raw.url) : undefined;
   let parsedUrl: URL | undefined;
@@ -66,7 +90,7 @@ export function normalizeWhistleWebCapture(raw: any, instanceId: string, fallbac
   if (raw?.rulesHeaders !== undefined) matchedRules.rulesHeaders = raw.rulesHeaders;
 
   return {
-    capture_id: String(raw?.id ?? raw?.capture_id ?? raw?.reqId ?? fallbackId ?? `cap_${Math.random().toString(16).slice(2)}`),
+    capture_id: firstNonEmptyString(raw?.id, raw?.capture_id, raw?.reqId, fallbackId) ?? `cap_${Math.random().toString(16).slice(2)}`,
     instance_id: instanceId,
     backend: 'whistle-web',
     protocol: parsedUrl ? parseProtocol(parsedUrl.protocol.replace(/:$/, '')) : parseProtocolFromUrl(url),
@@ -207,18 +231,7 @@ export class CapturesService {
         limit,
       });
     } catch (e) {
-      if (backend === 'runtime' && e instanceof CliError && e.details.code === 'CAPTURE_BACKEND_UNAVAILABLE') {
-        throw new CliError(
-          {
-            code: 'RUNTIME_BACKEND_UNAVAILABLE',
-            message: 'Runtime capture backend is not available',
-            reason: e.details.reason,
-            suggested_fix: 'Use the default Whistle Web backend, or start a backend that supports the whistle-cli runtime API.',
-          },
-          e,
-        );
-      }
-      throw e;
+      normalizeRuntimeBackendError(e);
     }
 
     const rawItems = Array.isArray((res as any).items) ? ((res as any).items as any[]) : [];
@@ -227,58 +240,70 @@ export class CapturesService {
   }
 
   async get(instanceId: string, captureId: string): Promise<CaptureRecord> {
-    const client = await this.runtimeClientForInstance(instanceId);
-    const res = await client.getCapture(captureId);
-    const item = (res as any).item ?? res;
-    return {
-      capture_id: String(item.capture_id ?? item.id ?? captureId),
-      instance_id: instanceId,
-      backend: 'runtime',
-      protocol: parseProtocol(item.protocol ?? item.proto ?? item.type),
-      method: item.method ? String(item.method) : undefined,
-      url: item.url ? String(item.url) : undefined,
-      host: item.host ? String(item.host) : undefined,
-      path: item.path ? String(item.path) : undefined,
-      status_code:
-        typeof item.status_code === 'number' ? item.status_code : typeof item.statusCode === 'number' ? item.statusCode : undefined,
-    };
+    try {
+      const client = await this.runtimeClientForInstance(instanceId);
+      const res = await client.getCapture(captureId);
+      const item = (res as any).item ?? res;
+      return {
+        capture_id: String(item.capture_id ?? item.id ?? captureId),
+        instance_id: instanceId,
+        backend: 'runtime',
+        protocol: parseProtocol(item.protocol ?? item.proto ?? item.type),
+        method: item.method ? String(item.method) : undefined,
+        url: item.url ? String(item.url) : undefined,
+        host: item.host ? String(item.host) : undefined,
+        path: item.path ? String(item.path) : undefined,
+        status_code:
+          typeof item.status_code === 'number' ? item.status_code : typeof item.statusCode === 'number' ? item.statusCode : undefined,
+      };
+    } catch (e) {
+      normalizeRuntimeBackendError(e);
+    }
   }
 
   async export(query: CaptureQuery & { export_format?: 'har' | 'json' }): Promise<Record<string, unknown>> {
-    const client = await this.runtimeClientForInstance(query.instance_id);
-    const limit = normalizeLimit(query.limit);
-    const res = await client.exportCaptures({
-      ...query.filters,
-      limit,
-      format: query.export_format,
-    });
-    return res as Record<string, unknown>;
+    try {
+      const client = await this.runtimeClientForInstance(query.instance_id);
+      const limit = normalizeLimit(query.limit);
+      const res = await client.exportCaptures({
+        ...query.filters,
+        limit,
+        format: query.export_format,
+      });
+      return res as Record<string, unknown>;
+    } catch (e) {
+      normalizeRuntimeBackendError(e);
+    }
   }
 
   async *tail(query: CaptureQuery): AsyncGenerator<CaptureRecord, void, unknown> {
-    const client = await this.runtimeClientForInstance(query.instance_id);
-    const limit = normalizeLimit(query.limit);
-    let seen = 0;
-    for await (const r of client.tailCaptures({ ...query.filters, limit })) {
-      const capture_id = String((r as any).capture_id ?? (r as any).id ?? (r as any).sessionId ?? (r as any).reqId ?? '');
-      yield {
-        capture_id: capture_id || `cap_${Math.random().toString(16).slice(2)}`,
-        instance_id: query.instance_id,
-        backend: 'runtime',
-        protocol: parseProtocol((r as any).protocol ?? (r as any).proto ?? (r as any).type),
-        method: (r as any).method ? String((r as any).method) : undefined,
-        url: (r as any).url ? String((r as any).url) : undefined,
-        host: (r as any).host ? String((r as any).host) : undefined,
-        path: (r as any).path ? String((r as any).path) : undefined,
-        status_code:
-          typeof (r as any).status_code === 'number'
-            ? (r as any).status_code
-            : typeof (r as any).statusCode === 'number'
-              ? (r as any).statusCode
-              : undefined,
-      };
-      seen++;
-      if (seen >= limit) break;
+    try {
+      const client = await this.runtimeClientForInstance(query.instance_id);
+      const limit = normalizeLimit(query.limit);
+      let seen = 0;
+      for await (const r of client.tailCaptures({ ...query.filters, limit })) {
+        const capture_id = String((r as any).capture_id ?? (r as any).id ?? (r as any).sessionId ?? (r as any).reqId ?? '');
+        yield {
+          capture_id: capture_id || `cap_${Math.random().toString(16).slice(2)}`,
+          instance_id: query.instance_id,
+          backend: 'runtime',
+          protocol: parseProtocol((r as any).protocol ?? (r as any).proto ?? (r as any).type),
+          method: (r as any).method ? String((r as any).method) : undefined,
+          url: (r as any).url ? String((r as any).url) : undefined,
+          host: (r as any).host ? String((r as any).host) : undefined,
+          path: (r as any).path ? String((r as any).path) : undefined,
+          status_code:
+            typeof (r as any).status_code === 'number'
+              ? (r as any).status_code
+              : typeof (r as any).statusCode === 'number'
+                ? (r as any).statusCode
+                : undefined,
+        };
+        seen++;
+        if (seen >= limit) break;
+      }
+    } catch (e) {
+      normalizeRuntimeBackendError(e);
     }
   }
 }

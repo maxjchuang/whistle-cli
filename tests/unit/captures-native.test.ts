@@ -26,6 +26,7 @@ describe('native capture normalization', () => {
   it('uses the session map key as a fallback capture id and normalizes websocket protocols', () => {
     const record = normalizeWhistleWebCapture(
       {
+        id: '',
         url: 'wss://example.com/socket',
         req: { method: 'GET', headers: { Host: 'example.com' } },
         res: { statusCode: 101 },

@@ -106,6 +106,29 @@ describe('US3 captures (integration)', () => {
     }
   });
 
+  it('runtime-only capture commands report runtime backend unavailable when runtime routes are absent', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({ disableCaptureRuntimeRoutes: true });
+    try {
+      for (const args of [
+        ['captures', 'get', '--id', 'cap_1', '--backend', 'runtime', '--format', 'json'],
+        ['captures', 'export', '--backend', 'runtime', '--format', 'json'],
+        ['captures', 'tail', '--backend', 'runtime', '--format', 'ndjson'],
+      ]) {
+        const res = await runCli(['--instance', 'dummy', ...args], {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        });
+        expect(res.exitCode).not.toBe(0);
+        expect(res.stderr).toContain('"code":"RUNTIME_BACKEND_UNAVAILABLE"');
+      }
+    } finally {
+      await backend.close();
+    }
+  });
+
   it('captures find rejects invalid backend values', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend();
