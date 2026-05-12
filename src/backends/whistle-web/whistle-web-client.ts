@@ -34,7 +34,8 @@ export interface WhistleGetDataResponse {
 function assertWhistleSuccess(payload: unknown): void {
   if (!payload || typeof payload !== 'object') return;
   const ec = (payload as { ec?: unknown }).ec;
-  if (typeof ec !== 'number' || ec === 0) return;
+  const numericEc = typeof ec === 'number' ? ec : typeof ec === 'string' && ec.trim() ? Number(ec) : undefined;
+  if (typeof numericEc !== 'number' || Number.isNaN(numericEc) || numericEc === 0) return;
   const em = (payload as { em?: unknown }).em;
   throw new CliError({
     code: 'WHISTLE_WEB_UNAVAILABLE',

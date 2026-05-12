@@ -147,4 +147,19 @@ describe('WhistleWebClient', () => {
       },
     });
   });
+
+  it('maps numeric string Whistle error responses to WHISTLE_WEB_UNAVAILABLE', async () => {
+    const baseUrl = await startServer((_req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ ec: '1', em: 'string error code' }));
+    });
+
+    const client = new WhistleWebClient({ baseUrl });
+    await expect(client.getRulesList()).rejects.toMatchObject({
+      details: {
+        code: 'WHISTLE_WEB_UNAVAILABLE',
+        reason: 'string error code',
+      },
+    });
+  });
 });

@@ -248,6 +248,53 @@ describe('US2 runtime default rules (integration)', () => {
     }
   });
 
+  it('rules default apply restores prior rules when enable fails after text write', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us2-runtime-state-');
+    const workDir = await makeTempDir('whistle-cli-us2-runtime-work-');
+    const rulesPath = path.join(workDir, 'default-rules.txt');
+    await fs.writeFile(rulesPath, 'example.com reqHeaders://x-new=2\n', 'utf8');
+    const backend = await startFakeCaptureBackend({
+      initialDefaultRulesIsDisabled: true,
+      failDefaultStateToggleAfterAdd: true,
+    });
+    try {
+      const apply = await runCli(
+        ['--instance', 'dummy', 'rules', 'default', 'apply', '--file', rulesPath, '--apply', '--verify', '--format', 'json'],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+
+      expect(apply.exitCode).not.toBe(0);
+      const err = JSON.parse(apply.stderr);
+      expect(err).toMatchObject({
+        status: 'error',
+        resource: 'rules',
+        action: 'default-apply',
+        error: {
+          code: 'WHISTLE_WEB_UNAVAILABLE',
+          reason: 'failed to enable default rules',
+        },
+      });
+
+      const get = await runCli(['--instance', 'dummy', 'rules', 'default', 'get', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(get.exitCode).toBe(0);
+      const got = JSON.parse(get.stdout);
+      expect(got.data.source_text).toBe('example.com reqHeaders://x-old=1\n');
+      expect(got.data.disabled).toBe(true);
+    } finally {
+      await backend.close();
+    }
+  });
+
   it('rules default rollback restores previous disabled state', async () => {
     const stateDir = await makeTempDir('whistle-cli-us2-runtime-state-');
     const workDir = await makeTempDir('whistle-cli-us2-runtime-work-');

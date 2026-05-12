@@ -214,8 +214,12 @@ export class RulesService {
     const beforeText = before.defaultRules ?? '';
     const beforeDisabled = Boolean(before.defaultRulesIsDisabled);
     await client.applyDefaultRules(text, { selected: opts?.selected });
-    if (opts?.selected === false) await client.disableDefaultRules();
-    if (opts?.selected === true) await client.enableDefaultRules();
+    try {
+      if (opts?.selected === false) await client.disableDefaultRules();
+      if (opts?.selected === true) await client.enableDefaultRules();
+    } catch (e) {
+      throw await this.restoreAndRethrowRuntimeDefaultRulesFailure(client, beforeText, beforeDisabled, e);
+    }
     const after = await client.getRulesList();
     const afterText = after.defaultRules ?? '';
     const afterDisabled = Boolean(after.defaultRulesIsDisabled);
@@ -225,13 +229,7 @@ export class RulesService {
     const stateMismatch = typeof expectedDisabled === 'boolean' && afterDisabled !== expectedDisabled;
 
     if (opts?.verify && (textMismatch || stateMismatch)) {
-      let restoreFailure: string | undefined;
-      try {
-        await this.restoreRuntimeDefaultRules(client, beforeText, beforeDisabled);
-      } catch (e) {
-        const err = CliError.fromUnknown(e);
-        restoreFailure = `${err.details.code}: ${err.details.message}${err.details.reason ? ` (${err.details.reason})` : ''}`;
-      }
+      const restoreFailure = await this.tryRestoreRuntimeDefaultRules(client, beforeText, beforeDisabled);
       throw new CliError({
         code: 'RULE_RUNTIME_VERIFY_FAILED',
         message: 'Runtime default rules verification failed',
@@ -257,6 +255,33 @@ export class RulesService {
     await client.applyDefaultRules(text, { selected: !disabled });
     if (disabled) await client.disableDefaultRules();
     else await client.enableDefaultRules();
+  }
+
+  private async tryRestoreRuntimeDefaultRules(client: WhistleWebClient, text: string, disabled: boolean): Promise<string | undefined> {
+    try {
+      await this.restoreRuntimeDefaultRules(client, text, disabled);
+      return undefined;
+    } catch (e) {
+      const err = CliError.fromUnknown(e);
+      return `${err.details.code}: ${err.details.message}${err.details.reason ? ` (${err.details.reason})` : ''}`;
+    }
+  }
+
+  private async restoreAndRethrowRuntimeDefaultRulesFailure(
+    client: WhistleWebClient,
+    beforeText: string,
+    beforeDisabled: boolean,
+    failure: unknown,
+  ): Promise<CliError> {
+    const err = CliError.fromUnknown(failure);
+    const restoreFailure = await this.tryRestoreRuntimeDefaultRules(client, beforeText, beforeDisabled);
+    return new CliError(
+      {
+        ...err.details,
+        reason: [err.details.reason, restoreFailure ? `Restore failed: ${restoreFailure}` : undefined].filter(Boolean).join(' '),
+      },
+      err,
+    );
   }
 
   async findByName(name: string, instanceId?: string): Promise<RuleSet | null> {

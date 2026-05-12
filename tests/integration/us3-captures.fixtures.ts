@@ -11,6 +11,7 @@ export interface FakeCaptureBackendOptions {
   initialDefaultRulesIsDisabled?: boolean;
   ignoreDefaultStateChange?: boolean;
   failRestoreAfterMismatch?: boolean;
+  failDefaultStateToggleAfterAdd?: boolean;
 }
 
 export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions): Promise<FakeCaptureBackend> {
@@ -18,6 +19,8 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
   let defaultRulesIsDisabled = Boolean(opts?.initialDefaultRulesIsDisabled);
   let mismatchWritesRemaining = opts?.mismatchDefaultRulesOnAdd ? 1 : 0;
   let failNextRulesAdd = false;
+  let stateToggleFailuresRemaining = 0;
+  let stateToggleFailureTriggered = false;
 
   async function readBody(req: http.IncomingMessage): Promise<string> {
     return await new Promise((resolve, reject) => {
@@ -61,6 +64,12 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
     }
 
     if (u.pathname === '/cgi-bin/rules/enable-default') {
+      if (stateToggleFailuresRemaining > 0) {
+        stateToggleFailuresRemaining--;
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ec: 1, em: 'failed to enable default rules' }));
+        return;
+      }
       if (!opts?.ignoreDefaultStateChange) {
         defaultRulesIsDisabled = false;
       }
@@ -70,6 +79,12 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
     }
 
     if (u.pathname === '/cgi-bin/rules/disable-default') {
+      if (stateToggleFailuresRemaining > 0) {
+        stateToggleFailuresRemaining--;
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ec: 1, em: 'failed to disable default rules' }));
+        return;
+      }
       if (!opts?.ignoreDefaultStateChange) {
         defaultRulesIsDisabled = true;
       }
@@ -99,6 +114,10 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
             mismatchWritesRemaining = Math.max(0, mismatchWritesRemaining - 1);
             if (shouldMismatch && opts?.failRestoreAfterMismatch) {
               failNextRulesAdd = true;
+            }
+            if (opts?.failDefaultStateToggleAfterAdd && !stateToggleFailureTriggered) {
+              stateToggleFailuresRemaining = 1;
+              stateToggleFailureTriggered = true;
             }
             if (!opts?.ignoreDefaultStateChange) {
               defaultRulesIsDisabled = params.get('selected') === 'false';
