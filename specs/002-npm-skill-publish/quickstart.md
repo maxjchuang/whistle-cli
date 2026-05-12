@@ -22,18 +22,20 @@ Validate that `whistle-cli` can be distributed via npm and consumed via installa
 ## Skill Release Flow
 
 1. Place skill content under repository-defined canonical path.
-2. Install skill from local directory in a clean agent environment.
-3. Optionally copy/link skill into global/default skill directory.
-4. Validate baseline agent workflow.
+2. Install skill from the public GitHub repository in a clean agent environment.
+3. Install skill from local directory for development verification.
+4. Optionally copy/link skill into global/default skill directory.
+5. Validate baseline agent workflow.
 
 ## Validation Sequence
 
 1. CLI package install from npm succeeds.
 2. `whistle-cli --help` works after install.
 3. Structured command output contract remains valid.
-4. Skill install from canonical local path succeeds.
-5. Agent executes baseline flow without command rewrites.
-6. Version mismatch (major) is rejected with explicit guidance.
+4. Skill install from public GitHub repository succeeds.
+5. Skill install from canonical local path succeeds.
+6. Agent executes baseline flow without command rewrites.
+7. Version mismatch (major) is rejected with explicit guidance.
 
 ## Example Verification Commands
 
@@ -44,6 +46,7 @@ npm run release:verify
 npm run release:dry-run
 
 # Skill (agent)
+skills add https://github.com/maxjchuang/whistle-cli --skill whistle-cli
 ./scripts/install-skill.sh
 ./scripts/verify-skill-install.sh
 

@@ -23,9 +23,14 @@ describe('skill install smoke', () => {
 
       const skillDir = path.join(tmpSkillsRoot, 'whistle-cli');
       const skillMd = await fs.readFile(path.join(skillDir, 'SKILL.md'), 'utf8');
-      expect(skillMd).toContain('whistle-cli');
+      expect(skillMd).toContain('name: whistle-cli');
+      expect(skillMd).toContain('description: Use when operating Whistle through whistle-cli');
       expect(skillMd).toContain('--format json');
       expect(skillMd).toContain('Resource-First');
+
+      const openAiYaml = await fs.readFile(path.join(skillDir, 'agents', 'openai.yaml'), 'utf8');
+      expect(openAiYaml).toContain('display_name: "whistle-cli"');
+      expect(openAiYaml).toContain('default_prompt: "Use $whistle-cli');
     } finally {
       await fs.rm(tmpSkillsRoot, { recursive: true, force: true });
     }

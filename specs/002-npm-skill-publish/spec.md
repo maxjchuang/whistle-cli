@@ -11,7 +11,7 @@
 
 - Q: v1 的 skill 安装目标路径策略是什么？ → A: 安装到仓库约定路径并提供复制到全局目录指引
 - Q: skill 与 CLI 的版本兼容策略是什么？ → A: 仅同 major 版本兼容（1.x 对 1.x）
-- Q: v1 分发渠道范围是什么？ → A: npm 公网发布 + 本地目录安装 skill（v1）
+- Q: v1 分发渠道范围是什么？ → A: npm 公网发布 + GitHub 仓库 skill 安装（`skills add ... --skill whistle-cli`）+ 本地目录安装 skill（v1）
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -74,14 +74,14 @@ As a maintainer, I can release new package and skill versions with clear compati
 - **FR-001**: System MUST provide a distributable package for `whistle-cli` that users can install in a standard Node.js environment and run as a command-line tool.
 - **FR-002**: System MUST provide release metadata and installation instructions for npm public registry installation so first-time users can complete setup without cloning source code.
 - **FR-003**: System MUST ensure the distributed CLI preserves the documented command surface and machine-readable output envelope used by agents.
-- **FR-004**: System MUST provide a distributable skill package that can be installed from a repository-defined local directory path into supported agent environments in v1.
+- **FR-004**: System MUST provide a distributable skill package that can be installed from the public GitHub repository using `skills add https://github.com/maxjchuang/whistle-cli --skill whistle-cli` and from a repository-defined local directory path into supported agent environments in v1.
 - **FR-005**: Skill documentation MUST define the required invocation pattern for agents, including preferred command layers, output parsing fields, and fallback behavior.
 - **FR-006**: Skill behavior MUST require agents to prioritize structured resource commands before raw passthrough commands except when unsupported operations are encountered.
 - **FR-007**: System MUST enforce and document compatibility boundaries where skill and CLI must share the same major version.
 - **FR-008**: System MUST provide an upgrade path for both npm package and local-directory skill package, including guidance for breaking or behavior-changing releases.
 - **FR-009**: System MUST provide clear error guidance for installation and runtime prerequisite failures, including next-step remediation.
 - **FR-010**: System MUST define a verification checklist for release readiness covering package installability, command availability, skill installability, and baseline workflow execution.
-- **FR-011**: System MUST include user guidance for copying or linking the repository-installed skill into a global/default skill directory when needed by the runtime environment.
+- **FR-011**: System MUST include user guidance for GitHub-based skill installation and for copying or linking the repository-installed skill into a global/default skill directory when needed by the runtime environment.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -106,4 +106,4 @@ As a maintainer, I can release new package and skill versions with clear compati
 - The target users already have a supported Node.js runtime and can install packages from their approved package source.
 - Agent environments that use this skill can execute local CLI commands and read JSON output.
 - Core Whistle prerequisite setup remains a prerequisite; this feature focuses on distribution and agent usability rather than replacing Whistle itself.
-- The first release scope is npm public registry for CLI and repository-defined local-directory installation for skill; other channels are out of scope for v1.
+- The first release scope is npm public registry for CLI plus GitHub repository and repository-defined local-directory installation for skill; other channels are out of scope for v1.

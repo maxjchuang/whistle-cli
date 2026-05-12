@@ -25,8 +25,11 @@ DEST="$DEST_ROOT/whistle-cli"
 [[ -f "$SRC/SKILL.md" ]] || { echo "Missing $SRC/SKILL.md" >&2; exit 2; }
 
 # Enforce major-version compatibility early.
-if ! bash "$ROOT/scripts/check-compatibility.sh"; then
-  exit $?
+if bash "$ROOT/scripts/check-compatibility.sh"; then
+  :
+else
+  status=$?
+  exit "$status"
 fi
 
 mkdir -p "$DEST_ROOT"
@@ -39,4 +42,3 @@ else
 fi
 
 echo "Installed skill to: $DEST" >&2
-

@@ -22,7 +22,7 @@ repo_root() {
 
 read_pkg_field() {
   local field="$1"
-  node -p "require('./package.json')[${field@Q}]" 2>/dev/null || true
+  FIELD="$field" node -p "require('./package.json')[process.env.FIELD] ?? ''" 2>/dev/null || true
 }
 
 semver_major() {
@@ -33,4 +33,3 @@ semver_major() {
   fi
   echo "${v%%.*}"
 }
-

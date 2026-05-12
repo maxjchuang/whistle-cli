@@ -1,0 +1,7 @@
+interface:
+  display_name: "whistle-cli"
+  short_description: "Operate Whistle through structured CLI workflows"
+  default_prompt: "Use $whistle-cli to check my Whistle instance status and report any next actions."
+
+policy:
+  allow_implicit_invocation: true

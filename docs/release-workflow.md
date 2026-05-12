@@ -10,6 +10,14 @@ npm run release:verify
 
 ## Skill Install Verification
 
+Public repository install:
+
+```bash
+skills add https://github.com/maxjchuang/whistle-cli --skill whistle-cli
+```
+
+Local checkout install:
+
 ```bash
 ./scripts/install-skill.sh
 ./scripts/verify-skill-install.sh
@@ -29,7 +37,7 @@ npm run release:dry-run
 
 ```bash
 npm run release:verify
-npm publish
+npm publish --access public --registry=https://registry.npmjs.org/
 ```
 
 ## Rollback / Mitigation
