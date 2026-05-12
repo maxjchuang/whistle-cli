@@ -8,10 +8,13 @@ export interface FakeCaptureBackend {
 export interface FakeCaptureBackendOptions {
   failRulesAdd?: boolean;
   mismatchDefaultRulesOnAdd?: boolean;
+  initialDefaultRulesIsDisabled?: boolean;
 }
 
 export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions): Promise<FakeCaptureBackend> {
   let defaultRules = 'example.com reqHeaders://x-old=1\n';
+  let defaultRulesIsDisabled = Boolean(opts?.initialDefaultRulesIsDisabled);
+  let mismatchWritesRemaining = opts?.mismatchDefaultRulesOnAdd ? 1 : 0;
 
   async function readBody(req: http.IncomingMessage): Promise<string> {
     return await new Promise((resolve, reject) => {
@@ -50,7 +53,21 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
 
     if (u.pathname === '/cgi-bin/rules/list') {
       res.statusCode = 200;
-      res.end(JSON.stringify({ ec: 0, defaultRules, defaultRulesIsDisabled: false, list: [] }));
+      res.end(JSON.stringify({ ec: 0, defaultRules, defaultRulesIsDisabled, list: [] }));
+      return;
+    }
+
+    if (u.pathname === '/cgi-bin/rules/enable-default') {
+      defaultRulesIsDisabled = false;
+      res.statusCode = 200;
+      res.end(JSON.stringify({ ec: 0 }));
+      return;
+    }
+
+    if (u.pathname === '/cgi-bin/rules/disable-default') {
+      defaultRulesIsDisabled = true;
+      res.statusCode = 200;
+      res.end(JSON.stringify({ ec: 0 }));
       return;
     }
 
@@ -65,7 +82,9 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
           }
           if (params.get('name') === 'Default') {
             const value = params.get('value') ?? '';
-            defaultRules = opts?.mismatchDefaultRulesOnAdd ? `${value}# rewritten by backend\n` : value;
+            defaultRules = mismatchWritesRemaining > 0 ? `${value}# rewritten by backend\n` : value;
+            mismatchWritesRemaining = Math.max(0, mismatchWritesRemaining - 1);
+            defaultRulesIsDisabled = params.get('selected') === 'false';
           }
           res.statusCode = 200;
           res.end(JSON.stringify({ ec: 0 }));

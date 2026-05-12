@@ -66,6 +66,35 @@ describe('WhistleWebClient', () => {
     await expect(client.applyDefaultRules('example.com reqHeaders://x-test=1\n')).resolves.toEqual({ ec: 0 });
   });
 
+  it('can apply default rules without selecting them', async () => {
+    const baseUrl = await startServer((req, res) => {
+      void (async () => {
+        const body = await readBody(req);
+        expect(body).toContain('selected=false');
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ ec: 0 }));
+      })();
+    });
+
+    const client = new WhistleWebClient({ baseUrl });
+    await expect(client.applyDefaultRules('example.com reqHeaders://x-test=1\n', { selected: false })).resolves.toEqual({ ec: 0 });
+  });
+
+  it('toggles default rules enabled state', async () => {
+    const seen: string[] = [];
+    const baseUrl = await startServer((req, res) => {
+      seen.push(req.url ?? '');
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ ec: 0 }));
+    });
+
+    const client = new WhistleWebClient({ baseUrl });
+    await client.disableDefaultRules();
+    await client.enableDefaultRules();
+
+    expect(seen).toEqual(['/cgi-bin/rules/disable-default', '/cgi-bin/rules/enable-default']);
+  });
+
   it('reads native capture data from /cgi-bin/get-data', async () => {
     const baseUrl = await startServer((req, res) => {
       expect(req.url).toBe('/cgi-bin/get-data?startTime=0&dumpCount=20');

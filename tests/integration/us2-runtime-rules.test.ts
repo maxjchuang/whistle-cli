@@ -97,6 +97,7 @@ describe('US2 runtime default rules (integration)', () => {
       expect(afterRollback.exitCode).toBe(0);
       const restored = JSON.parse(afterRollback.stdout);
       expect(restored.data.source_text).toBe('example.com reqHeaders://x-old=1\n');
+      expect(restored.data.disabled).toBe(false);
     } finally {
       await backend.close();
     }
@@ -136,12 +137,12 @@ describe('US2 runtime default rules (integration)', () => {
     }
   });
 
-  it('rules default apply fails verify when backend persists different content', async () => {
+  it('rules default apply fails verify and restores previous runtime default rules', async () => {
     const stateDir = await makeTempDir('whistle-cli-us2-runtime-state-');
     const workDir = await makeTempDir('whistle-cli-us2-runtime-work-');
     const rulesPath = path.join(workDir, 'default-rules.txt');
     await fs.writeFile(rulesPath, 'example.com reqHeaders://x-new=2\n', 'utf8');
-    const backend = await startFakeCaptureBackend({ mismatchDefaultRulesOnAdd: true });
+    const backend = await startFakeCaptureBackend({ mismatchDefaultRulesOnAdd: true, initialDefaultRulesIsDisabled: true });
     try {
       const apply = await runCli(
         ['--instance', 'dummy', 'rules', 'default', 'apply', '--file', rulesPath, '--apply', '--verify', '--format', 'json'],
@@ -163,6 +164,71 @@ describe('US2 runtime default rules (integration)', () => {
           code: 'RULE_RUNTIME_VERIFY_FAILED',
         },
       });
+
+      const get = await runCli(['--instance', 'dummy', 'rules', 'default', 'get', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(get.exitCode).toBe(0);
+      const got = JSON.parse(get.stdout);
+      expect(got.data.source_text).toBe('example.com reqHeaders://x-old=1\n');
+      expect(got.data.disabled).toBe(true);
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('rules default rollback restores previous disabled state', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us2-runtime-state-');
+    const workDir = await makeTempDir('whistle-cli-us2-runtime-work-');
+    const rulesPath = path.join(workDir, 'default-rules.txt');
+    const newRules = 'example.com reqHeaders://x-new=2\n';
+    await fs.writeFile(rulesPath, newRules, 'utf8');
+    const backend = await startFakeCaptureBackend({ initialDefaultRulesIsDisabled: true });
+    try {
+      const apply = await runCli(
+        ['--instance', 'dummy', 'rules', 'default', 'apply', '--file', rulesPath, '--apply', '--verify', '--format', 'json'],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(apply.exitCode).toBe(0);
+      const applied = JSON.parse(apply.stdout);
+
+      const afterApply = await runCli(['--instance', 'dummy', 'rules', 'default', 'get', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(afterApply.exitCode).toBe(0);
+      const active = JSON.parse(afterApply.stdout);
+      expect(active.data.source_text).toBe(newRules);
+      expect(active.data.disabled).toBe(false);
+
+      const rollback = await runCli(['--instance', 'dummy', 'rules', 'rollback', '--action-id', applied.data.action_id, '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(rollback.exitCode).toBe(0);
+
+      const afterRollback = await runCli(['--instance', 'dummy', 'rules', 'default', 'get', '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+      expect(afterRollback.exitCode).toBe(0);
+      const restored = JSON.parse(afterRollback.stdout);
+      expect(restored.data.source_text).toBe('example.com reqHeaders://x-old=1\n');
+      expect(restored.data.disabled).toBe(true);
     } finally {
       await backend.close();
     }

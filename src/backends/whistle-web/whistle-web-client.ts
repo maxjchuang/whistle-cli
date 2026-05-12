@@ -93,13 +93,22 @@ export class WhistleWebClient {
     return this.requestJson<WhistleRulesListResponse>('/cgi-bin/rules/list');
   }
 
-  async applyDefaultRules(value: string): Promise<WhistleApplyResponse> {
-    const body = `name=Default&value=${encodeURIComponent(value)}&selected=true`;
+  async applyDefaultRules(value: string, opts?: { selected?: boolean }): Promise<WhistleApplyResponse> {
+    const selected = opts?.selected ?? true;
+    const body = `name=Default&value=${encodeURIComponent(value)}&selected=${selected ? 'true' : 'false'}`;
     return this.requestJson<WhistleApplyResponse>('/cgi-bin/rules/add', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body,
     });
+  }
+
+  async enableDefaultRules(): Promise<WhistleApplyResponse> {
+    return this.requestJson<WhistleApplyResponse>('/cgi-bin/rules/enable-default', { method: 'POST' });
+  }
+
+  async disableDefaultRules(): Promise<WhistleApplyResponse> {
+    return this.requestJson<WhistleApplyResponse>('/cgi-bin/rules/disable-default', { method: 'POST' });
   }
 
   async getData(opts?: { startTime?: number; dumpCount?: number }): Promise<WhistleGetDataResponse> {

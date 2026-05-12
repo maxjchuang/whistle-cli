@@ -50,9 +50,10 @@ async function runRulesRollback(
       }
       if (h.type === 'rules.default') {
         const prev_text = String(h.prev_text ?? '');
+        const prev_disabled = Boolean(h.prev_disabled);
         const instanceId = typeof h.instanceId === 'string' ? h.instanceId : resolved.id;
-        const out = await service.applyRuntimeDefaultRules(prev_text, instanceId, { verify: true });
-        return { rolled_back: true, kind: 'default', result: out };
+        const out = await service.applyRuntimeDefaultRules(prev_text, instanceId, { verify: true, selected: !prev_disabled });
+        return { rolled_back: true, kind: 'default', prev_disabled, result: out };
       }
 
       throw new CliError({
@@ -118,7 +119,7 @@ export function registerRulesResource(program: Command): void {
               const before = await service.getRuntimeDefaultRules(resolved.id);
               return {
                 result: await service.applyRuntimeDefaultRules(text, resolved.id, { verify: pav.verify }),
-                rollback: { type: 'rules.default', prev_text: before.source_text, instanceId: resolved.id },
+                rollback: { type: 'rules.default', prev_text: before.source_text, prev_disabled: before.disabled, instanceId: resolved.id },
               };
             },
             verify: async () => service.getRuntimeDefaultRules(resolved.id),

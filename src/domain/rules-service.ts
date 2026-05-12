@@ -207,16 +207,25 @@ export class RulesService {
   async applyRuntimeDefaultRules(
     text: string,
     instanceId?: string,
-    opts?: { verify?: boolean },
+    opts?: { verify?: boolean; selected?: boolean },
   ): Promise<RuntimeDefaultRulesApplyResult> {
     const client = await this.whistleWebClientForInstance(instanceId);
     const before = await client.getRulesList();
     const beforeText = before.defaultRules ?? '';
-    await client.applyDefaultRules(text);
+    const beforeDisabled = Boolean(before.defaultRulesIsDisabled);
+    await client.applyDefaultRules(text, { selected: opts?.selected });
+    if (opts?.selected === false) await client.disableDefaultRules();
+    if (opts?.selected === true) await client.enableDefaultRules();
     const after = await client.getRulesList();
     const afterText = after.defaultRules ?? '';
+    const afterDisabled = Boolean(after.defaultRulesIsDisabled);
 
     if (opts?.verify && normalizeEol(afterText) !== normalizeEol(text)) {
+      try {
+        await this.restoreRuntimeDefaultRules(client, beforeText, beforeDisabled);
+      } catch {
+        // Preserve the verification failure as the primary error; restore is best effort.
+      }
       throw new CliError({
         code: 'RULE_RUNTIME_VERIFY_FAILED',
         message: 'Runtime default rules verification failed',
@@ -227,11 +236,17 @@ export class RulesService {
 
     return {
       backend: 'whistle-web',
-      changed: normalizeEol(beforeText) !== normalizeEol(afterText),
+      changed: normalizeEol(beforeText) !== normalizeEol(afterText) || beforeDisabled !== afterDisabled,
       verified: Boolean(opts?.verify),
       before_sha256: sha256Hex(normalizeEol(beforeText)),
       after_sha256: sha256Hex(normalizeEol(afterText)),
     };
+  }
+
+  private async restoreRuntimeDefaultRules(client: WhistleWebClient, text: string, disabled: boolean): Promise<void> {
+    await client.applyDefaultRules(text, { selected: !disabled });
+    if (disabled) await client.disableDefaultRules();
+    else await client.enableDefaultRules();
   }
 
   async findByName(name: string, instanceId?: string): Promise<RuleSet | null> {
