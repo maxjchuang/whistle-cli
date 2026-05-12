@@ -5,6 +5,57 @@ import { errorEnvelope, okEnvelope } from '../output/result';
 import { renderEnvelope } from '../output/renderers';
 import { ActionExecutor } from '../domain/action-executor';
 import { RulesService } from '../domain/rules-service';
+import { CapturesService } from '../domain/captures-service';
+
+function parseDurationMs(input: unknown): number {
+  const raw = String(input ?? '60s').trim();
+  const parsed = raw.endsWith('ms') ? Number(raw.slice(0, -2)) : raw.endsWith('s') ? Number(raw.slice(0, -1)) * 1000 : Number(raw) * 1000;
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 60_000;
+}
+
+function splitHeaderPair(pair: string): { header: string; equals: string } {
+  const idx = pair.indexOf('=');
+  if (idx <= 0) {
+    throw new CliError({
+      code: 'UNSUPPORTED_OPERATION',
+      message: `Invalid --header value: ${pair}`,
+      reason: 'Expected format: key=value',
+    });
+  }
+  const header = pair.slice(0, idx).trim();
+  if (!header) {
+    throw new CliError({
+      code: 'UNSUPPORTED_OPERATION',
+      message: `Invalid --header value: ${pair}`,
+      reason: 'Header key is empty',
+    });
+  }
+  return { header, equals: pair.slice(idx + 1) };
+}
+
+function unescapeRegexHost(raw: string): string {
+  return raw
+    .replace(/\\\./g, '.')
+    .replace(/\\-/g, '-')
+    .replace(/\\_/g, '_')
+    .replace(/\\:/g, ':')
+    .replace(/\\\//g, '/')
+    .replace(/\\/g, '');
+}
+
+function hostFromMatch(match: string): string | undefined {
+  const raw = match.trim();
+
+  const direct = raw.match(/^https?:\/\/([^/?#\s]+)/i);
+  if (direct?.[1]) return direct[1];
+
+  const marker = raw.match(/https:\\?\/\\?\/(.+)$/i);
+  if (!marker?.[1]) return undefined;
+
+  const hostLike = marker[1].split(/(?:\\?\/|\/|\\\?|[/?#\s$()[\]{}+*])/)[0];
+  const host = unescapeRegexHost(hostLike).replace(/\^/g, '').trim();
+  return host || undefined;
+}
 
 function normalizeHeaderPairs(headers: string[]): string {
   const pairs: string[] = [];
@@ -48,6 +99,7 @@ export function registerRulesShortcuts(program: Command): void {
   const rule = program.command('rule').description('AI-friendly rule shortcuts');
   const executor = new ActionExecutor();
   const rules = new RulesService();
+  const captures = new CapturesService();
 
   rule
     .command('set-header')
@@ -62,6 +114,9 @@ export function registerRulesShortcuts(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
+    .option('--runtime-default', 'Apply to runtime default rules through Whistle Web API')
+    .option('--verify-live', 'Observe matching captures and assert header injected')
+    .option('--duration <duration>', 'Live verification duration', '60s')
     .action(
       async (cmdOpts: {
         match: string;
@@ -71,6 +126,9 @@ export function registerRulesShortcuts(program: Command): void {
         preview?: boolean;
         apply?: boolean;
         verify?: boolean;
+        runtimeDefault?: boolean;
+        verifyLive?: boolean;
+        duration?: string;
       }) => {
         const opts = program.opts();
         const format = opts.format ?? 'json';
@@ -84,9 +142,65 @@ export function registerRulesShortcuts(program: Command): void {
             apply: Boolean(cmdOpts.apply) || Boolean(cmdOpts.verify) || (!cmdOpts.preview && !cmdOpts.apply && !cmdOpts.verify),
           };
 
-          const targetRuleSet = await rules.ensureRuleSetByName(cmdOpts.target, resolved.id);
           const payload = cmdOpts.ref?.trim() ? cmdOpts.ref.trim() : normalizeHeaderPairs(cmdOpts.header);
           const ruleLine = buildRuleLine(cmdOpts.match, `reqHeaders://${payload}`);
+
+          if (cmdOpts.runtimeDefault) {
+            const current = await rules.getRuntimeDefaultRules(resolved.id);
+            const next = `${current.source_text.trimEnd()}\n${ruleLine}`;
+            const runtime = await rules.applyRuntimeDefaultRules(next, resolved.id, {
+              verify: Boolean(cmdOpts.verify),
+              selected: true,
+            });
+            let live_verification: Awaited<ReturnType<CapturesService['assertHeader']>> | undefined;
+
+            if (cmdOpts.verifyLive) {
+              const firstHeader = cmdOpts.header[0];
+              if (!firstHeader) {
+                throw new CliError({
+                  code: 'UNSUPPORTED_OPERATION',
+                  message: '--verify-live requires a key=value --header value',
+                });
+              }
+              const { header, equals } = splitHeaderPair(firstHeader);
+              const host = hostFromMatch(cmdOpts.match);
+              if (!host) {
+                throw new CliError({
+                  code: 'UNSUPPORTED_OPERATION',
+                  message: 'Unable to derive host from --match for live verification',
+                  reason: `Match pattern: ${cmdOpts.match}`,
+                  suggested_fix: 'Use a matcher that includes an https:// host, such as /^https:\\/\\/example\\.com\\//.',
+                });
+              }
+              live_verification = await captures.assertHeader(
+                { instance_id: resolved.id, filters: { host }, limit: 200 },
+                { header, equals, durationMs: parseDurationMs(cmdOpts.duration) },
+              );
+            }
+
+            process.stdout.write(
+              renderEnvelope(
+                okEnvelope(
+                  'rules',
+                  action,
+                  { runtime, live_verification },
+                  {
+                    instance: resolved,
+                    effective: !live_verification || live_verification.classification === 'OK',
+                    meta: { verified: Boolean(cmdOpts.verify), live_verified: Boolean(cmdOpts.verifyLive) } as {
+                      verified: boolean;
+                      live_verified: boolean;
+                    },
+                  },
+                ),
+                format,
+              ),
+            );
+            if (live_verification && live_verification.classification !== 'OK') process.exitCode = 1;
+            return;
+          }
+
+          const targetRuleSet = await rules.ensureRuleSetByName(cmdOpts.target, resolved.id);
 
           const result = await executor.execute(
             { resource: 'rules', action, instance: resolved },
@@ -185,4 +299,3 @@ export function registerRulesShortcuts(program: Command): void {
       },
     );
 }
-
