@@ -248,11 +248,12 @@ describe('US2 runtime default rules (integration)', () => {
     }
   });
 
-  it('rules default apply restores prior rules when enable fails after text write', async () => {
+  it('rules default rollback restores applied rules when disable fails after text write', async () => {
     const stateDir = await makeTempDir('whistle-cli-us2-runtime-state-');
     const workDir = await makeTempDir('whistle-cli-us2-runtime-work-');
     const rulesPath = path.join(workDir, 'default-rules.txt');
-    await fs.writeFile(rulesPath, 'example.com reqHeaders://x-new=2\n', 'utf8');
+    const newRules = 'example.com reqHeaders://x-new=2\n';
+    await fs.writeFile(rulesPath, newRules, 'utf8');
     const backend = await startFakeCaptureBackend({
       initialDefaultRulesIsDisabled: true,
       failDefaultStateToggleAfterAdd: true,
@@ -267,16 +268,25 @@ describe('US2 runtime default rules (integration)', () => {
           },
         },
       );
+      expect(apply.exitCode).toBe(0);
+      const applied = JSON.parse(apply.stdout);
 
-      expect(apply.exitCode).not.toBe(0);
-      const err = JSON.parse(apply.stderr);
+      const rollback = await runCli(['--instance', 'dummy', 'rules', 'rollback', '--action-id', applied.data.action_id, '--format', 'json'], {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      });
+
+      expect(rollback.exitCode).not.toBe(0);
+      const err = JSON.parse(rollback.stderr);
       expect(err).toMatchObject({
         status: 'error',
         resource: 'rules',
-        action: 'default-apply',
+        action: 'rollback',
         error: {
           code: 'WHISTLE_WEB_UNAVAILABLE',
-          reason: 'failed to enable default rules',
+          reason: 'failed to disable default rules',
         },
       });
 
@@ -288,8 +298,8 @@ describe('US2 runtime default rules (integration)', () => {
       });
       expect(get.exitCode).toBe(0);
       const got = JSON.parse(get.stdout);
-      expect(got.data.source_text).toBe('example.com reqHeaders://x-old=1\n');
-      expect(got.data.disabled).toBe(true);
+      expect(got.data.source_text).toBe(newRules);
+      expect(got.data.disabled).toBe(false);
     } finally {
       await backend.close();
     }

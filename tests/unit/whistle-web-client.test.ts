@@ -80,7 +80,7 @@ describe('WhistleWebClient', () => {
     await expect(client.applyDefaultRules('example.com reqHeaders://x-test=1\n', { selected: false })).resolves.toEqual({ ec: 0 });
   });
 
-  it('toggles default rules enabled state', async () => {
+  it('disables default rules', async () => {
     const seen: string[] = [];
     const baseUrl = await startServer((req, res) => {
       seen.push(req.url ?? '');
@@ -90,9 +90,8 @@ describe('WhistleWebClient', () => {
 
     const client = new WhistleWebClient({ baseUrl });
     await client.disableDefaultRules();
-    await client.enableDefaultRules();
 
-    expect(seen).toEqual(['/cgi-bin/rules/disable-default', '/cgi-bin/rules/enable-default']);
+    expect(seen).toEqual(['/cgi-bin/rules/disable-default']);
   });
 
   it('reads native capture data from /cgi-bin/get-data', async () => {

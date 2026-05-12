@@ -216,7 +216,6 @@ export class RulesService {
     await client.applyDefaultRules(text, { selected: opts?.selected });
     try {
       if (opts?.selected === false) await client.disableDefaultRules();
-      if (opts?.selected === true) await client.enableDefaultRules();
     } catch (e) {
       throw await this.restoreAndRethrowRuntimeDefaultRulesFailure(client, beforeText, beforeDisabled, e);
     }
@@ -254,7 +253,6 @@ export class RulesService {
   private async restoreRuntimeDefaultRules(client: WhistleWebClient, text: string, disabled: boolean): Promise<void> {
     await client.applyDefaultRules(text, { selected: !disabled });
     if (disabled) await client.disableDefaultRules();
-    else await client.enableDefaultRules();
   }
 
   private async tryRestoreRuntimeDefaultRules(client: WhistleWebClient, text: string, disabled: boolean): Promise<string | undefined> {

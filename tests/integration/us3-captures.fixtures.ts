@@ -64,17 +64,20 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
     }
 
     if (u.pathname === '/cgi-bin/rules/enable-default') {
-      if (stateToggleFailuresRemaining > 0) {
-        stateToggleFailuresRemaining--;
-        res.statusCode = 200;
-        res.end(JSON.stringify({ ec: 1, em: 'failed to enable default rules' }));
-        return;
-      }
-      if (!opts?.ignoreDefaultStateChange) {
-        defaultRulesIsDisabled = false;
-      }
-      res.statusCode = 200;
-      res.end(JSON.stringify({ ec: 0 }));
+      void readBody(req)
+        .then((body) => {
+          const params = new URLSearchParams(body);
+          defaultRules = params.get('value') ?? '';
+          if (!opts?.ignoreDefaultStateChange) {
+            defaultRulesIsDisabled = false;
+          }
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ec: 0 }));
+        })
+        .catch(() => {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ec: 1, error: 'bad_form' }));
+        });
       return;
     }
 

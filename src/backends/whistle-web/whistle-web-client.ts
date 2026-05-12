@@ -104,10 +104,6 @@ export class WhistleWebClient {
     });
   }
 
-  async enableDefaultRules(): Promise<WhistleApplyResponse> {
-    return this.requestJson<WhistleApplyResponse>('/cgi-bin/rules/enable-default', { method: 'POST' });
-  }
-
   async disableDefaultRules(): Promise<WhistleApplyResponse> {
     return this.requestJson<WhistleApplyResponse>('/cgi-bin/rules/disable-default', { method: 'POST' });
   }
