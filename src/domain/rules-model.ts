@@ -39,3 +39,17 @@ export interface RulePatch {
   verification_plan?: string;
 }
 
+export interface RuntimeDefaultRules {
+  instance_id: string;
+  backend: 'whistle-web';
+  source_text: string;
+  disabled: boolean;
+}
+
+export interface RuntimeDefaultRulesApplyResult {
+  backend: 'whistle-web';
+  changed: boolean;
+  verified: boolean;
+  before_sha256: string;
+  after_sha256: string;
+}

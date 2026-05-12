@@ -2,8 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { defaultWhistleStorageDir, type WhistleStorageLocation } from '../backends/storage/whistle-storage';
+import { WhistleWebClient } from '../backends/whistle-web';
 import { CliError } from '../output/errors';
-import type { RuleSet } from './rules-model';
+import { loadConfig } from '../shared/config';
+import { InstanceService } from './instance-service';
+import type { RuntimeDefaultRules, RuntimeDefaultRulesApplyResult, RuleSet } from './rules-model';
 
 export type RulePatchMode = 'replace' | 'append';
 
@@ -116,9 +119,19 @@ async function writeTextFile(filePath: string, contents: string): Promise<void> 
 }
 
 export class RulesService {
+  private readonly instances = new InstanceService();
+
   resolveStorage(instanceId?: string): WhistleStorageLocation {
     const { baseDir, instance_id } = resolveInstanceBaseDir(instanceId);
     return { path: baseDir, source: instance_id === 'default' ? 'default' : 'candidate' };
+  }
+
+  private async whistleWebClientForInstance(instanceId?: string): Promise<WhistleWebClient> {
+    const cfg = loadConfig();
+    if (cfg.runtimeUrl) return new WhistleWebClient({ baseUrl: cfg.runtimeUrl });
+
+    const st = await this.instances.status(instanceId ?? 'default');
+    return new WhistleWebClient({ baseUrl: `http://${st.host}:${st.port}` });
   }
 
   private rulesDir(storage: WhistleStorageLocation): string {
@@ -178,6 +191,47 @@ export class RulesService {
       });
     }
     return out;
+  }
+
+  async getRuntimeDefaultRules(instanceId?: string): Promise<RuntimeDefaultRules> {
+    const client = await this.whistleWebClientForInstance(instanceId);
+    const list = await client.getRulesList();
+    return {
+      instance_id: instanceId ?? 'default',
+      backend: 'whistle-web',
+      source_text: list.defaultRules ?? '',
+      disabled: Boolean(list.defaultRulesIsDisabled),
+    };
+  }
+
+  async applyRuntimeDefaultRules(
+    text: string,
+    instanceId?: string,
+    opts?: { verify?: boolean },
+  ): Promise<RuntimeDefaultRulesApplyResult> {
+    const client = await this.whistleWebClientForInstance(instanceId);
+    const before = await client.getRulesList();
+    const beforeText = before.defaultRules ?? '';
+    await client.applyDefaultRules(text);
+    const after = await client.getRulesList();
+    const afterText = after.defaultRules ?? '';
+
+    if (opts?.verify && normalizeEol(afterText) !== normalizeEol(text)) {
+      throw new CliError({
+        code: 'RULE_RUNTIME_VERIFY_FAILED',
+        message: 'Runtime default rules verification failed',
+        reason: 'Whistle Web API returned default rules that differ from the requested content.',
+        suggested_fix: 'Re-run `whistle-cli rules default get` and inspect the active runtime rules before applying again.',
+      });
+    }
+
+    return {
+      backend: 'whistle-web',
+      changed: normalizeEol(beforeText) !== normalizeEol(afterText),
+      verified: Boolean(opts?.verify),
+      before_sha256: sha256Hex(normalizeEol(beforeText)),
+      after_sha256: sha256Hex(normalizeEol(afterText)),
+    };
   }
 
   async findByName(name: string, instanceId?: string): Promise<RuleSet | null> {

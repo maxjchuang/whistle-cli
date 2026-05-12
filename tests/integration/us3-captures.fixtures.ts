@@ -6,6 +6,20 @@ export interface FakeCaptureBackend {
 }
 
 export async function startFakeCaptureBackend(): Promise<FakeCaptureBackend> {
+  let defaultRules = 'example.com reqHeaders://x-old=1\n';
+
+  async function readBody(req: http.IncomingMessage): Promise<string> {
+    return await new Promise((resolve, reject) => {
+      let buf = '';
+      req.setEncoding('utf8');
+      req.on('data', (chunk) => {
+        buf += chunk;
+      });
+      req.on('end', () => resolve(buf));
+      req.on('error', reject);
+    });
+  }
+
   async function readJson(req: http.IncomingMessage): Promise<any> {
     return await new Promise((resolve, reject) => {
       let buf = '';
@@ -28,6 +42,29 @@ export async function startFakeCaptureBackend(): Promise<FakeCaptureBackend> {
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://localhost');
     res.setHeader('content-type', 'application/json; charset=utf-8');
+
+    if (u.pathname === '/cgi-bin/rules/list') {
+      res.statusCode = 200;
+      res.end(JSON.stringify({ ec: 0, defaultRules, defaultRulesIsDisabled: false, list: [] }));
+      return;
+    }
+
+    if (u.pathname === '/cgi-bin/rules/add' && req.method === 'POST') {
+      void readBody(req)
+        .then((body) => {
+          const params = new URLSearchParams(body);
+          if (params.get('name') === 'Default') {
+            defaultRules = params.get('value') ?? '';
+          }
+          res.statusCode = 200;
+          res.end(JSON.stringify({ ec: 0 }));
+        })
+        .catch(() => {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ec: 1, error: 'bad_form' }));
+        });
+      return;
+    }
 
     if (u.pathname === '/__whistle_cli__/captures/find') {
       const keyword = u.searchParams.get('keyword') ?? '';

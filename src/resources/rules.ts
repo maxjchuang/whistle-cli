@@ -66,6 +66,71 @@ export function registerRulesResource(program: Command): void {
   const rules = program.command('rules').description('Manage Whistle rules');
   const service = new RulesService();
   const executor = new ActionExecutor();
+  const defaultRules = rules.command('default').description('Manage runtime default Whistle rules');
+
+  defaultRules
+    .command('get')
+    .description('Get runtime default rules from Whistle Web')
+    .action(async () => {
+      const opts = program.opts();
+      const format = opts.format ?? 'json';
+      const resolved = await resolveInstanceId(opts.instance);
+      const action = 'default-get';
+
+      try {
+        const data = await service.getRuntimeDefaultRules(resolved.id);
+        process.stdout.write(renderEnvelope(okEnvelope('rules', action, data, { instance: resolved, effective: true }), format));
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.exitCode = 1;
+      }
+    });
+
+  defaultRules
+    .command('apply')
+    .description('Apply runtime default rules through Whistle Web')
+    .requiredOption('--file <path>', 'Path to complete default rules text')
+    .option('--preview', 'Preview without applying')
+    .option('--apply', 'Apply the change')
+    .option('--verify', 'Verify after apply')
+    .action(async (cmdOpts: { file: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
+      const opts = program.opts();
+      const format = opts.format ?? 'json';
+      const resolved = await resolveInstanceId(opts.instance);
+      const action = 'default-apply';
+      const pav = resolvePavFlags(cmdOpts);
+
+      try {
+        const text = await fs.readFile(cmdOpts.file, 'utf8');
+        const result = await executor.execute(
+          { resource: 'rules', action, instance: resolved },
+          pav,
+          {
+            preview: async () => ({ backend: 'whistle-web' as const, bytes: Buffer.byteLength(text, 'utf8') }),
+            apply: async () => ({
+              result: await service.applyRuntimeDefaultRules(text, resolved.id, { verify: pav.verify }),
+            }),
+            verify: async () => service.getRuntimeDefaultRules(resolved.id),
+          },
+        );
+
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope('rules', action, result, {
+              instance: resolved,
+              effective: pav.apply ? true : false,
+              meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
+            }),
+            format,
+          ),
+        );
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.exitCode = 1;
+      }
+    });
 
   rules
     .command('rollback')
