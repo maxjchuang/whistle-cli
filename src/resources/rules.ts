@@ -48,6 +48,12 @@ async function runRulesRollback(
         const out = await service.setEnabled(file_id, prev_enabled, resolved.id);
         return { rolled_back: true, kind: 'enabled', file_id, prev_enabled, result: out };
       }
+      if (h.type === 'rules.default') {
+        const prev_text = String(h.prev_text ?? '');
+        const instanceId = typeof h.instanceId === 'string' ? h.instanceId : resolved.id;
+        const out = await service.applyRuntimeDefaultRules(prev_text, instanceId, { verify: true });
+        return { rolled_back: true, kind: 'default', result: out };
+      }
 
       throw new CliError({
         code: 'UNSUPPORTED_OPERATION',
@@ -108,9 +114,13 @@ export function registerRulesResource(program: Command): void {
           pav,
           {
             preview: async () => ({ backend: 'whistle-web' as const, bytes: Buffer.byteLength(text, 'utf8') }),
-            apply: async () => ({
-              result: await service.applyRuntimeDefaultRules(text, resolved.id, { verify: pav.verify }),
-            }),
+            apply: async () => {
+              const before = await service.getRuntimeDefaultRules(resolved.id);
+              return {
+                result: await service.applyRuntimeDefaultRules(text, resolved.id, { verify: pav.verify }),
+                rollback: { type: 'rules.default', prev_text: before.source_text, instanceId: resolved.id },
+              };
+            },
             verify: async () => service.getRuntimeDefaultRules(resolved.id),
           },
         );

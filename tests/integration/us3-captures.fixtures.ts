@@ -5,7 +5,12 @@ export interface FakeCaptureBackend {
   close: () => Promise<void>;
 }
 
-export async function startFakeCaptureBackend(): Promise<FakeCaptureBackend> {
+export interface FakeCaptureBackendOptions {
+  failRulesAdd?: boolean;
+  mismatchDefaultRulesOnAdd?: boolean;
+}
+
+export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions): Promise<FakeCaptureBackend> {
   let defaultRules = 'example.com reqHeaders://x-old=1\n';
 
   async function readBody(req: http.IncomingMessage): Promise<string> {
@@ -53,8 +58,14 @@ export async function startFakeCaptureBackend(): Promise<FakeCaptureBackend> {
       void readBody(req)
         .then((body) => {
           const params = new URLSearchParams(body);
+          if (opts?.failRulesAdd) {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ ec: 1, em: 'failed to add default rules' }));
+            return;
+          }
           if (params.get('name') === 'Default') {
-            defaultRules = params.get('value') ?? '';
+            const value = params.get('value') ?? '';
+            defaultRules = opts?.mismatchDefaultRulesOnAdd ? `${value}# rewritten by backend\n` : value;
           }
           res.statusCode = 200;
           res.end(JSON.stringify({ ec: 0 }));

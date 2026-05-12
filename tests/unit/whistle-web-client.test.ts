@@ -102,4 +102,20 @@ describe('WhistleWebClient', () => {
       details: { code: 'WHISTLE_WEB_UNAVAILABLE' },
     });
   });
+
+  it('maps Whistle logical error responses to WHISTLE_WEB_UNAVAILABLE', async () => {
+    const baseUrl = await startServer((_req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ ec: 1, em: 'rules add failed' }));
+    });
+
+    const client = new WhistleWebClient({ baseUrl });
+    await expect(client.applyDefaultRules('example.com reqHeaders://x-test=1\n')).rejects.toMatchObject({
+      details: {
+        code: 'WHISTLE_WEB_UNAVAILABLE',
+        message: 'Whistle Web API returned an error response',
+        reason: 'rules add failed',
+      },
+    });
+  });
 });

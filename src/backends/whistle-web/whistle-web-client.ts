@@ -31,6 +31,19 @@ export interface WhistleGetDataResponse {
   [key: string]: unknown;
 }
 
+function assertWhistleSuccess(payload: unknown): void {
+  if (!payload || typeof payload !== 'object') return;
+  const ec = (payload as { ec?: unknown }).ec;
+  if (typeof ec !== 'number' || ec === 0) return;
+  const em = (payload as { em?: unknown }).em;
+  throw new CliError({
+    code: 'WHISTLE_WEB_UNAVAILABLE',
+    message: 'Whistle Web API returned an error response',
+    reason: typeof em === 'string' && em.trim() ? em : `ec=${ec}`,
+    suggested_fix: 'Ensure the target Whistle instance is running and its Web UI API is healthy.',
+  });
+}
+
 export class WhistleWebClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -60,7 +73,9 @@ export class WhistleWebClient {
           suggested_fix: 'Ensure the target Whistle instance is running and its Web UI API is reachable.',
         });
       }
-      return (await res.json()) as T;
+      const payload = (await res.json()) as T;
+      assertWhistleSuccess(payload);
+      return payload;
     } catch (e) {
       if (e instanceof CliError) throw e;
       throw new CliError({
