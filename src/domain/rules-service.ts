@@ -172,15 +172,30 @@ function matcherMatchesUrl(pattern: string, targetUrl: string): boolean {
   const regex = regexFromMatcher(trimmed);
   if (regex) return regex.test(targetUrl);
 
-  if (/^https?:\/\//i.test(trimmed)) {
-    return targetUrl.startsWith(trimmed);
-  }
-
   let parsed: URL | null = null;
   try {
     parsed = new URL(targetUrl);
   } catch {
     parsed = null;
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    if (!parsed) return false;
+    try {
+      const matcher = new URL(trimmed);
+      if (matcher.protocol !== parsed.protocol || matcher.host !== parsed.host) return false;
+      const matcherPathAndSearch = `${matcher.pathname}${matcher.search}`;
+      const targetPathAndSearch = `${parsed.pathname}${parsed.search}`;
+      if (matcherPathAndSearch === '/') return true;
+      return (
+        targetPathAndSearch === matcherPathAndSearch ||
+        targetPathAndSearch.startsWith(`${matcherPathAndSearch}/`) ||
+        targetPathAndSearch.startsWith(`${matcherPathAndSearch}?`) ||
+        (Boolean(matcher.search) && targetPathAndSearch.startsWith(matcherPathAndSearch))
+      );
+    } catch {
+      return false;
+    }
   }
 
   if (!parsed) return targetUrl.includes(trimmed);

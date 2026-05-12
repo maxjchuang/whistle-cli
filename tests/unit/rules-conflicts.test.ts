@@ -40,6 +40,16 @@ describe('rule header conflict diagnosis', () => {
     expect(result.matches).toEqual([]);
   });
 
+  it('does not match full URL patterns across unrelated host boundaries', () => {
+    const result = diagnoseHeaderConflictsFromText('https://example.com reqHeaders://x-env=bad', {
+      header: 'x-env',
+      url: 'https://example.com.evil/api/foo',
+    });
+
+    expect(result.conflict).toBe(false);
+    expect(result.matches).toEqual([]);
+  });
+
   it('matches header names case-insensitively', () => {
     const result = diagnoseHeaderConflictsFromText('example.com reqHeaders://X-Env=staging', {
       header: 'x-env',
