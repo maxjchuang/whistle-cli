@@ -15,6 +15,19 @@ function resolvePavFlags(cmdOpts: { preview?: boolean; apply?: boolean; verify?:
   return { preview, apply, verify };
 }
 
+type RulesRollbackHandle = {
+  type?: unknown;
+  file_id?: unknown;
+  prev_text?: unknown;
+  prev_enabled?: unknown;
+  prev_disabled?: unknown;
+  instanceId?: unknown;
+};
+
+type RollbackCommandOption = {
+  rollback?: string;
+};
+
 async function runRulesRollback(
   executor: ActionExecutor,
   service: RulesService,
@@ -29,7 +42,7 @@ async function runRulesRollback(
       if (!handle || typeof handle !== 'object') {
         throw new CliError({ code: 'UNSUPPORTED_OPERATION', message: 'Invalid rollback handle' });
       }
-      const h = handle as any;
+      const h = handle as RulesRollbackHandle;
       if (h.type === 'rules.patch') {
         const file_id = String(h.file_id);
         const prev_text = String(h.prev_text ?? '');
@@ -52,7 +65,10 @@ async function runRulesRollback(
         const prev_text = String(h.prev_text ?? '');
         const prev_disabled = Boolean(h.prev_disabled);
         const instanceId = typeof h.instanceId === 'string' ? h.instanceId : resolved.id;
-        const out = await service.applyRuntimeDefaultRules(prev_text, instanceId, { verify: true, selected: !prev_disabled });
+        const out = await service.applyRuntimeDefaultRules(prev_text, instanceId, {
+          verify: true,
+          selected: !prev_disabled,
+        });
         return { rolled_back: true, kind: 'default', prev_disabled, result: out };
       }
 
@@ -65,7 +81,10 @@ async function runRulesRollback(
   );
 
   process.stdout.write(
-    renderEnvelope(okEnvelope('rules', 'rollback', res, { instance: resolved, effective: true }), format as OutputFormat),
+    renderEnvelope(
+      okEnvelope('rules', 'rollback', res, { instance: resolved, effective: true }),
+      format as OutputFormat,
+    ),
   );
 }
 
@@ -86,10 +105,17 @@ export function registerRulesResource(program: Command): void {
 
       try {
         const data = await service.getRuntimeDefaultRules(resolved.id);
-        process.stdout.write(renderEnvelope(okEnvelope('rules', action, data, { instance: resolved, effective: true }), format));
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope('rules', action, data, { instance: resolved, effective: true }),
+            format,
+          ),
+        );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -101,47 +127,62 @@ export function registerRulesResource(program: Command): void {
     .option('--preview', 'Preview without applying')
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
-    .action(async (cmdOpts: { file: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
-      const opts = program.opts();
-      const format = opts.format ?? 'json';
-      const resolved = await resolveInstanceId(opts.instance);
-      const action = 'default-apply';
-      const pav = resolvePavFlags(cmdOpts);
+    .action(
+      async (cmdOpts: { file: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
+        const opts = program.opts();
+        const format = opts.format ?? 'json';
+        const resolved = await resolveInstanceId(opts.instance);
+        const action = 'default-apply';
+        const pav = resolvePavFlags(cmdOpts);
 
-      try {
-        const text = await fs.readFile(cmdOpts.file, 'utf8');
-        const result = await executor.execute(
-          { resource: 'rules', action, instance: resolved },
-          pav,
-          {
-            preview: async () => ({ backend: 'whistle-web' as const, bytes: Buffer.byteLength(text, 'utf8') }),
-            apply: async () => {
-              const before = await service.getRuntimeDefaultRules(resolved.id);
-              return {
-                result: await service.applyRuntimeDefaultRules(text, resolved.id, { verify: pav.verify, selected: true }),
-                rollback: { type: 'rules.default', prev_text: before.source_text, prev_disabled: before.disabled, instanceId: resolved.id },
-              };
+        try {
+          const text = await fs.readFile(cmdOpts.file, 'utf8');
+          const result = await executor.execute(
+            { resource: 'rules', action, instance: resolved },
+            pav,
+            {
+              preview: async () => ({
+                backend: 'whistle-web' as const,
+                bytes: Buffer.byteLength(text, 'utf8'),
+              }),
+              apply: async () => {
+                const before = await service.getRuntimeDefaultRules(resolved.id);
+                return {
+                  result: await service.applyRuntimeDefaultRules(text, resolved.id, {
+                    verify: pav.verify,
+                    selected: true,
+                  }),
+                  rollback: {
+                    type: 'rules.default',
+                    prev_text: before.source_text,
+                    prev_disabled: before.disabled,
+                    instanceId: resolved.id,
+                  },
+                };
+              },
+              verify: async () => service.getRuntimeDefaultRules(resolved.id),
             },
-            verify: async () => service.getRuntimeDefaultRules(resolved.id),
-          },
-        );
+          );
 
-        process.stdout.write(
-          renderEnvelope(
-            okEnvelope('rules', action, result, {
-              instance: resolved,
-              effective: pav.apply ? true : false,
-              meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
-            }),
-            format,
-          ),
-        );
-      } catch (e) {
-        const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
-        process.exitCode = 1;
-      }
-    });
+          process.stdout.write(
+            renderEnvelope(
+              okEnvelope('rules', action, result, {
+                instance: resolved,
+                effective: pav.apply ? true : false,
+                meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
+              }),
+              format,
+            ),
+          );
+        } catch (e) {
+          const err = CliError.fromUnknown(e);
+          process.stderr.write(
+            renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+          );
+          process.exitCode = 1;
+        }
+      },
+    );
 
   rules
     .command('diagnose-conflicts')
@@ -155,12 +196,23 @@ export function registerRulesResource(program: Command): void {
       const action = 'diagnose-conflicts';
 
       try {
-        const data = await service.diagnoseHeaderConflicts({ header: cmdOpts.header, url: cmdOpts.url, instanceId: resolved.id });
-        process.stdout.write(renderEnvelope(okEnvelope('rules', action, data, { instance: resolved, effective: !data.conflict }), format));
+        const data = await service.diagnoseHeaderConflicts({
+          header: cmdOpts.header,
+          url: cmdOpts.url,
+          instanceId: resolved.id,
+        });
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope('rules', action, data, { instance: resolved, effective: !data.conflict }),
+            format,
+          ),
+        );
         if (data.conflict) process.exitCode = 1;
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -179,7 +231,9 @@ export function registerRulesResource(program: Command): void {
         await runRulesRollback(executor, service, resolved, cmdOpts.actionId, format);
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -202,13 +256,20 @@ export function registerRulesResource(program: Command): void {
         const plan = await service.planPatchFromText(cmdOpts.id, patchText, mode, resolved.id);
         process.stdout.write(
           renderEnvelope(
-            okEnvelope('rules', action, { plan }, { instance: resolved, effective: false, meta: { preview: true } }),
+            okEnvelope(
+              'rules',
+              action,
+              { plan },
+              { instance: resolved, effective: false, meta: { preview: true } },
+            ),
             format,
           ),
         );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -222,60 +283,83 @@ export function registerRulesResource(program: Command): void {
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
     .option('--rollback <actionId>', 'Rollback a previous action instead of importing')
-    .action(async (cmdOpts: { name: string; file: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
-      const opts = program.opts();
-      const format = opts.format ?? 'json';
-      const resolved = await resolveInstanceId(opts.instance);
-      const action = 'import';
-      const pav = resolvePavFlags(cmdOpts);
+    .action(
+      async (
+        cmdOpts: {
+          name: string;
+          file: string;
+          preview?: boolean;
+          apply?: boolean;
+          verify?: boolean;
+        } & RollbackCommandOption,
+      ) => {
+        const opts = program.opts();
+        const format = opts.format ?? 'json';
+        const resolved = await resolveInstanceId(opts.instance);
+        const action = 'import';
+        const pav = resolvePavFlags(cmdOpts);
 
-      if ((cmdOpts as any).rollback) {
+        if (cmdOpts.rollback) {
+          try {
+            await runRulesRollback(executor, service, resolved, String(cmdOpts.rollback), format);
+          } catch (e) {
+            const err = CliError.fromUnknown(e);
+            process.stderr.write(
+              renderEnvelope(
+                errorEnvelope('rules', 'rollback', err, { instance: resolved }),
+                format,
+              ),
+            );
+            process.exitCode = 1;
+          }
+          return;
+        }
+
         try {
-          await runRulesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+          const text = await fs.readFile(cmdOpts.file, 'utf8');
+          const bytes = Buffer.byteLength(text, 'utf8');
+
+          const result = await executor.execute(
+            { resource: 'rules', action, instance: resolved },
+            pav,
+            {
+              preview: async () => ({
+                will_import: { name: cmdOpts.name, from: cmdOpts.file, bytes },
+              }),
+              apply: async () => {
+                const rule = await service.create(cmdOpts.name, text, resolved.id);
+                return {
+                  result: { created: true, rule },
+                  rollback: {
+                    type: 'rules.import',
+                    file_id: rule.file_id,
+                    instanceId: resolved.id,
+                  },
+                };
+              },
+              verify: async () => ({ ok: true }),
+            },
+          );
+
+          process.stdout.write(
+            renderEnvelope(
+              okEnvelope('rules', action, result, {
+                instance: resolved,
+                effective: pav.apply ? true : false,
+                meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
+              }),
+              format,
+            ),
+          );
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('rules', 'rollback', err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+          );
           process.exitCode = 1;
         }
-        return;
-      }
-
-      try {
-        const text = await fs.readFile(cmdOpts.file, 'utf8');
-        const bytes = Buffer.byteLength(text, 'utf8');
-
-        const result = await executor.execute(
-          { resource: 'rules', action, instance: resolved },
-          pav,
-          {
-            preview: async () => ({ will_import: { name: cmdOpts.name, from: cmdOpts.file, bytes } }),
-            apply: async () => {
-              const rule = await service.create(cmdOpts.name, text, resolved.id);
-              return {
-                result: { created: true, rule },
-                rollback: { type: 'rules.import', file_id: rule.file_id, instanceId: resolved.id },
-              };
-            },
-            verify: async () => ({ ok: true }),
-          },
-        );
-
-        process.stdout.write(
-          renderEnvelope(
-            okEnvelope('rules', action, result, {
-              instance: resolved,
-              effective: pav.apply ? true : false,
-              meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
-            }),
-            format,
-          ),
-        );
-      } catch (e) {
-        const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
-        process.exitCode = 1;
-      }
-    });
+      },
+    );
 
   rules
     .command('export')
@@ -286,57 +370,74 @@ export function registerRulesResource(program: Command): void {
     .option('--apply', 'Write the file')
     .option('--verify', 'Verify after write')
     .option('--rollback <actionId>', 'Rollback a previous action instead of exporting')
-    .action(async (cmdOpts: { id: string; out: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
-      const opts = program.opts();
-      const format = opts.format ?? 'json';
-      const resolved = await resolveInstanceId(opts.instance);
-      const action = 'export';
-      const pav = resolvePavFlags(cmdOpts);
+    .action(
+      async (
+        cmdOpts: {
+          id: string;
+          out: string;
+          preview?: boolean;
+          apply?: boolean;
+          verify?: boolean;
+        } & RollbackCommandOption,
+      ) => {
+        const opts = program.opts();
+        const format = opts.format ?? 'json';
+        const resolved = await resolveInstanceId(opts.instance);
+        const action = 'export';
+        const pav = resolvePavFlags(cmdOpts);
 
-      if ((cmdOpts as any).rollback) {
+        if (cmdOpts.rollback) {
+          try {
+            await runRulesRollback(executor, service, resolved, String(cmdOpts.rollback), format);
+          } catch (e) {
+            const err = CliError.fromUnknown(e);
+            process.stderr.write(
+              renderEnvelope(
+                errorEnvelope('rules', 'rollback', err, { instance: resolved }),
+                format,
+              ),
+            );
+            process.exitCode = 1;
+          }
+          return;
+        }
+
         try {
-          await runRulesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+          const result = await executor.execute(
+            { resource: 'rules', action, instance: resolved },
+            pav,
+            {
+              preview: async () => ({ will_export: { id: cmdOpts.id, out: cmdOpts.out } }),
+              apply: async () => {
+                const out = await service.exportToFile(cmdOpts.id, cmdOpts.out, resolved.id);
+                return { result: out };
+              },
+              verify: async () => {
+                const st = await fs.stat(cmdOpts.out);
+                return { exists: true, bytes: st.size };
+              },
+            },
+          );
+
+          process.stdout.write(
+            renderEnvelope(
+              okEnvelope('rules', action, result, {
+                instance: resolved,
+                effective: pav.apply ? true : false,
+                meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
+              }),
+              format,
+            ),
+          );
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('rules', 'rollback', err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+          );
           process.exitCode = 1;
         }
-        return;
-      }
-
-      try {
-        const result = await executor.execute(
-          { resource: 'rules', action, instance: resolved },
-          pav,
-          {
-            preview: async () => ({ will_export: { id: cmdOpts.id, out: cmdOpts.out } }),
-            apply: async () => {
-              const out = await service.exportToFile(cmdOpts.id, cmdOpts.out, resolved.id);
-              return { result: out };
-            },
-            verify: async () => {
-              const st = await fs.stat(cmdOpts.out);
-              return { exists: true, bytes: st.size };
-            },
-          },
-        );
-
-        process.stdout.write(
-          renderEnvelope(
-            okEnvelope('rules', action, result, {
-              instance: resolved,
-              effective: pav.apply ? true : false,
-              meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
-            }),
-            format,
-          ),
-        );
-      } catch (e) {
-        const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
-        process.exitCode = 1;
-      }
-    });
+      },
+    );
 
   rules
     .command('apply')
@@ -348,63 +449,92 @@ export function registerRulesResource(program: Command): void {
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
     .option('--rollback <actionId>', 'Rollback a previous action instead of applying')
-    .action(async (cmdOpts: { id: string; file: string; mode: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
-      const opts = program.opts();
-      const format = opts.format ?? 'json';
-      const resolved = await resolveInstanceId(opts.instance);
-      const action = 'apply';
-      const pav = resolvePavFlags(cmdOpts);
+    .action(
+      async (
+        cmdOpts: {
+          id: string;
+          file: string;
+          mode: string;
+          preview?: boolean;
+          apply?: boolean;
+          verify?: boolean;
+        } & RollbackCommandOption,
+      ) => {
+        const opts = program.opts();
+        const format = opts.format ?? 'json';
+        const resolved = await resolveInstanceId(opts.instance);
+        const action = 'apply';
+        const pav = resolvePavFlags(cmdOpts);
 
-      if ((cmdOpts as any).rollback) {
+        if (cmdOpts.rollback) {
+          try {
+            await runRulesRollback(executor, service, resolved, String(cmdOpts.rollback), format);
+          } catch (e) {
+            const err = CliError.fromUnknown(e);
+            process.stderr.write(
+              renderEnvelope(
+                errorEnvelope('rules', 'rollback', err, { instance: resolved }),
+                format,
+              ),
+            );
+            process.exitCode = 1;
+          }
+          return;
+        }
+
         try {
-          await runRulesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+          const patchText = await fs.readFile(cmdOpts.file, 'utf8');
+          const mode = (cmdOpts.mode === 'append' ? 'append' : 'replace') as 'append' | 'replace';
+
+          const result = await executor.execute(
+            { resource: 'rules', action, instance: resolved },
+            pav,
+            {
+              preview: async () =>
+                service.planPatchFromText(cmdOpts.id, patchText, mode, resolved.id),
+              apply: async () => {
+                const before = await service.get(cmdOpts.id, resolved.id);
+                const prev_text = before.source_text ?? '';
+                const plan = await service.planPatchFromText(
+                  cmdOpts.id,
+                  patchText,
+                  mode,
+                  resolved.id,
+                );
+                const out = await service.applyPlannedPatch(plan, patchText, resolved.id);
+                return {
+                  result: out,
+                  rollback: {
+                    type: 'rules.patch',
+                    file_id: plan.file_id,
+                    prev_text,
+                    instanceId: resolved.id,
+                  },
+                };
+              },
+              verify: async () => service.verify(cmdOpts.id, resolved.id),
+            },
+          );
+
+          process.stdout.write(
+            renderEnvelope(
+              okEnvelope('rules', action, result, {
+                instance: resolved,
+                effective: pav.apply ? true : false,
+                meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
+              }),
+              format,
+            ),
+          );
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('rules', 'rollback', err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+          );
           process.exitCode = 1;
         }
-        return;
-      }
-
-      try {
-        const patchText = await fs.readFile(cmdOpts.file, 'utf8');
-        const mode = (cmdOpts.mode === 'append' ? 'append' : 'replace') as 'append' | 'replace';
-
-        const result = await executor.execute(
-          { resource: 'rules', action, instance: resolved },
-          pav,
-          {
-            preview: async () => service.planPatchFromText(cmdOpts.id, patchText, mode, resolved.id),
-            apply: async () => {
-              const before = await service.get(cmdOpts.id, resolved.id);
-              const prev_text = before.source_text ?? '';
-              const plan = await service.planPatchFromText(cmdOpts.id, patchText, mode, resolved.id);
-              const out = await service.applyPlannedPatch(plan, patchText, resolved.id);
-              return {
-                result: out,
-                rollback: { type: 'rules.patch', file_id: plan.file_id, prev_text, instanceId: resolved.id },
-              };
-            },
-            verify: async () => service.verify(cmdOpts.id, resolved.id),
-          },
-        );
-
-        process.stdout.write(
-          renderEnvelope(
-            okEnvelope('rules', action, result, {
-              instance: resolved,
-              effective: pav.apply ? true : false,
-              meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
-            }),
-            format,
-          ),
-        );
-      } catch (e) {
-        const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
-        process.exitCode = 1;
-      }
-    });
+      },
+    );
 
   rules
     .command('verify')
@@ -418,10 +548,17 @@ export function registerRulesResource(program: Command): void {
 
       try {
         const data = await service.verify(cmdOpts.id, resolved.id);
-        process.stdout.write(renderEnvelope(okEnvelope('rules', action, data, { instance: resolved, effective: data.ok }), format));
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope('rules', action, data, { instance: resolved, effective: data.ok }),
+            format,
+          ),
+        );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -437,10 +574,17 @@ export function registerRulesResource(program: Command): void {
       const action = 'list';
       try {
         const data = await service.list(resolved.id, { includeText: Boolean(cmdOpts.withText) });
-        process.stdout.write(renderEnvelope(okEnvelope('rules', action, { rules: data }, { instance: resolved }), format));
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope('rules', action, { rules: data }, { instance: resolved }),
+            format,
+          ),
+        );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -456,10 +600,14 @@ export function registerRulesResource(program: Command): void {
       const action = 'get';
       try {
         const data = await service.get(cmdOpts.id, resolved.id);
-        process.stdout.write(renderEnvelope(okEnvelope('rules', action, data, { instance: resolved }), format));
+        process.stdout.write(
+          renderEnvelope(okEnvelope('rules', action, data, { instance: resolved }), format),
+        );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -472,58 +620,79 @@ export function registerRulesResource(program: Command): void {
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
     .option('--rollback <actionId>', 'Rollback a previous action instead of enabling')
-    .action(async (cmdOpts: { id: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
-      const opts = program.opts();
-      const format = opts.format ?? 'json';
-      const resolved = await resolveInstanceId(opts.instance);
-      const action = 'enable';
-      const pav = resolvePavFlags(cmdOpts);
+    .action(
+      async (
+        cmdOpts: {
+          id: string;
+          preview?: boolean;
+          apply?: boolean;
+          verify?: boolean;
+        } & RollbackCommandOption,
+      ) => {
+        const opts = program.opts();
+        const format = opts.format ?? 'json';
+        const resolved = await resolveInstanceId(opts.instance);
+        const action = 'enable';
+        const pav = resolvePavFlags(cmdOpts);
 
-      if ((cmdOpts as any).rollback) {
+        if (cmdOpts.rollback) {
+          try {
+            await runRulesRollback(executor, service, resolved, String(cmdOpts.rollback), format);
+          } catch (e) {
+            const err = CliError.fromUnknown(e);
+            process.stderr.write(
+              renderEnvelope(
+                errorEnvelope('rules', 'rollback', err, { instance: resolved }),
+                format,
+              ),
+            );
+            process.exitCode = 1;
+          }
+          return;
+        }
+
         try {
-          await runRulesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+          const result = await executor.execute(
+            { resource: 'rules', action, instance: resolved },
+            pav,
+            {
+              preview: async () => ({ will_enable: cmdOpts.id }),
+              apply: async () => {
+                const before = await service.get(cmdOpts.id, resolved.id);
+                const out = await service.setEnabled(cmdOpts.id, true, resolved.id);
+                return {
+                  result: out,
+                  rollback: {
+                    type: 'rules.enable',
+                    file_id: before.file_id,
+                    prev_enabled: before.enabled,
+                    instanceId: resolved.id,
+                  },
+                };
+              },
+              verify: async () => service.get(cmdOpts.id, resolved.id),
+            },
+          );
+
+          process.stdout.write(
+            renderEnvelope(
+              okEnvelope('rules', action, result, {
+                instance: resolved,
+                effective: pav.apply ? true : false,
+                meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
+              }),
+              format,
+            ),
+          );
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('rules', 'rollback', err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+          );
           process.exitCode = 1;
         }
-        return;
-      }
-
-      try {
-        const result = await executor.execute(
-          { resource: 'rules', action, instance: resolved },
-          pav,
-          {
-            preview: async () => ({ will_enable: cmdOpts.id }),
-            apply: async () => {
-              const before = await service.get(cmdOpts.id, resolved.id);
-              const out = await service.setEnabled(cmdOpts.id, true, resolved.id);
-              return {
-                result: out,
-                rollback: { type: 'rules.enable', file_id: before.file_id, prev_enabled: before.enabled, instanceId: resolved.id },
-              };
-            },
-            verify: async () => service.get(cmdOpts.id, resolved.id),
-          },
-        );
-
-        process.stdout.write(
-          renderEnvelope(
-            okEnvelope('rules', action, result, {
-              instance: resolved,
-              effective: pav.apply ? true : false,
-              meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
-            }),
-            format,
-          ),
-        );
-      } catch (e) {
-        const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
-        process.exitCode = 1;
-      }
-    });
+      },
+    );
 
   rules
     .command('disable')
@@ -533,56 +702,77 @@ export function registerRulesResource(program: Command): void {
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
     .option('--rollback <actionId>', 'Rollback a previous action instead of disabling')
-    .action(async (cmdOpts: { id: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
-      const opts = program.opts();
-      const format = opts.format ?? 'json';
-      const resolved = await resolveInstanceId(opts.instance);
-      const action = 'disable';
-      const pav = resolvePavFlags(cmdOpts);
+    .action(
+      async (
+        cmdOpts: {
+          id: string;
+          preview?: boolean;
+          apply?: boolean;
+          verify?: boolean;
+        } & RollbackCommandOption,
+      ) => {
+        const opts = program.opts();
+        const format = opts.format ?? 'json';
+        const resolved = await resolveInstanceId(opts.instance);
+        const action = 'disable';
+        const pav = resolvePavFlags(cmdOpts);
 
-      if ((cmdOpts as any).rollback) {
+        if (cmdOpts.rollback) {
+          try {
+            await runRulesRollback(executor, service, resolved, String(cmdOpts.rollback), format);
+          } catch (e) {
+            const err = CliError.fromUnknown(e);
+            process.stderr.write(
+              renderEnvelope(
+                errorEnvelope('rules', 'rollback', err, { instance: resolved }),
+                format,
+              ),
+            );
+            process.exitCode = 1;
+          }
+          return;
+        }
+
         try {
-          await runRulesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+          const result = await executor.execute(
+            { resource: 'rules', action, instance: resolved },
+            pav,
+            {
+              preview: async () => ({ will_disable: cmdOpts.id }),
+              apply: async () => {
+                const before = await service.get(cmdOpts.id, resolved.id);
+                const out = await service.setEnabled(cmdOpts.id, false, resolved.id);
+                return {
+                  result: out,
+                  rollback: {
+                    type: 'rules.disable',
+                    file_id: before.file_id,
+                    prev_enabled: before.enabled,
+                    instanceId: resolved.id,
+                  },
+                };
+              },
+              verify: async () => service.get(cmdOpts.id, resolved.id),
+            },
+          );
+
+          process.stdout.write(
+            renderEnvelope(
+              okEnvelope('rules', action, result, {
+                instance: resolved,
+                effective: pav.apply ? true : false,
+                meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
+              }),
+              format,
+            ),
+          );
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('rules', 'rollback', err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format),
+          );
           process.exitCode = 1;
         }
-        return;
-      }
-
-      try {
-        const result = await executor.execute(
-          { resource: 'rules', action, instance: resolved },
-          pav,
-          {
-            preview: async () => ({ will_disable: cmdOpts.id }),
-            apply: async () => {
-              const before = await service.get(cmdOpts.id, resolved.id);
-              const out = await service.setEnabled(cmdOpts.id, false, resolved.id);
-              return {
-                result: out,
-                rollback: { type: 'rules.disable', file_id: before.file_id, prev_enabled: before.enabled, instanceId: resolved.id },
-              };
-            },
-            verify: async () => service.get(cmdOpts.id, resolved.id),
-          },
-        );
-
-        process.stdout.write(
-          renderEnvelope(
-            okEnvelope('rules', action, result, {
-              instance: resolved,
-              effective: pav.apply ? true : false,
-              meta: { preview: pav.preview, verified: pav.verify, action_id: result.action_id },
-            }),
-            format,
-          ),
-        );
-      } catch (e) {
-        const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('rules', action, err, { instance: resolved }), format));
-        process.exitCode = 1;
-      }
-    });
+      },
+    );
 }

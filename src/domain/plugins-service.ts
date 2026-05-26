@@ -81,7 +81,9 @@ export function parsePluginIdentifier(spec: string): PluginIdentifier {
   return { name, version, spec: s };
 }
 
-function parsePluginsListLine(line: string): { name: string; version?: string; state: PluginLifecycleState } | null {
+function parsePluginsListLine(
+  line: string,
+): { name: string; version?: string; state: PluginLifecycleState } | null {
   const s = line.trim();
   if (!s) return null;
   // Expected (from our fixtures): <name>@<version> enabled|disabled
@@ -101,7 +103,7 @@ function parsePluginsListLine(line: string): { name: string; version?: string; s
   return { name, version, state };
 }
 
-async function readJsonIfExists(filePath: string): Promise<any | null> {
+async function readJsonIfExists(filePath: string): Promise<unknown | null> {
   try {
     const txt = await fs.readFile(filePath, 'utf8');
     return txt.trim() ? JSON.parse(txt) : null;
@@ -117,7 +119,10 @@ export class PluginsService {
     this.w2 = w2Client ?? new W2Client();
   }
 
-  private pluginPackageJsonPath(name: string, instanceId?: string): { instance_id: string; pkgJsonPath: string } {
+  private pluginPackageJsonPath(
+    name: string,
+    instanceId?: string,
+  ): { instance_id: string; pkgJsonPath: string } {
     const { baseDir, instance_id } = resolveInstanceBaseDir(instanceId);
     return {
       instance_id,
@@ -166,27 +171,37 @@ export class PluginsService {
       });
     }
 
-    const state = (await this.list(instanceId)).find((p) => p.name === id.name)?.state ?? 'installed';
+    const state =
+      (await this.list(instanceId)).find((p) => p.name === id.name)?.state ?? 'installed';
+    const pkgRecord = pkg as Record<string, unknown>;
     return {
       instance_id,
-      name: String(pkg.name || id.name),
-      version: typeof pkg.version === 'string' ? pkg.version : undefined,
-      description: typeof pkg.description === 'string' ? pkg.description : undefined,
-      homepage: typeof pkg.homepage === 'string' ? pkg.homepage : undefined,
+      name: String(pkgRecord.name || id.name),
+      version: typeof pkgRecord.version === 'string' ? pkgRecord.version : undefined,
+      description: typeof pkgRecord.description === 'string' ? pkgRecord.description : undefined,
+      homepage: typeof pkgRecord.homepage === 'string' ? pkgRecord.homepage : undefined,
       installed_path: path.dirname(pkgJsonPath),
       state,
     };
   }
 
-  async install(spec: string, instanceId?: string): Promise<{ installed: boolean; plugin: PluginRecord; raw: { stdout: string; stderr: string } }>{
+  async install(
+    spec: string,
+    instanceId?: string,
+  ): Promise<{
+    installed: boolean;
+    plugin: PluginRecord;
+    raw: { stdout: string; stderr: string };
+  }> {
     const id = parsePluginIdentifier(spec);
     const res = await this.w2.pluginInstall(id.spec, { instanceId, timeoutMs: 5 * 60_000 });
     ensureW2Available(res);
     if (res.exitCode !== 0) {
       const merged = `${res.stdout}\n${res.stderr}`.toLowerCase();
-      const code = merged.includes('enotfound') || merged.includes('econn') || merged.includes('registry')
-        ? 'PLUGIN_REGISTRY_UNAVAILABLE'
-        : 'PLUGIN_INSTALL_FAILED';
+      const code =
+        merged.includes('enotfound') || merged.includes('econn') || merged.includes('registry')
+          ? 'PLUGIN_REGISTRY_UNAVAILABLE'
+          : 'PLUGIN_INSTALL_FAILED';
       throw new CliError({
         code,
         message: `Plugin install failed: ${id.name}`,
@@ -209,7 +224,10 @@ export class PluginsService {
     };
   }
 
-  async uninstall(name: string, instanceId?: string): Promise<{ uninstalled: boolean; raw: { stdout: string; stderr: string } }>{
+  async uninstall(
+    name: string,
+    instanceId?: string,
+  ): Promise<{ uninstalled: boolean; raw: { stdout: string; stderr: string } }> {
     const id = parsePluginIdentifier(name);
     const res = await this.w2.pluginUninstall(id.name, { instanceId, timeoutMs: 5 * 60_000 });
     ensureW2Available(res);
@@ -224,7 +242,10 @@ export class PluginsService {
     return { uninstalled: true, raw: { stdout: res.stdout, stderr: res.stderr } };
   }
 
-  async enable(name: string, instanceId?: string): Promise<{ enabled: boolean; raw: { stdout: string; stderr: string } }>{
+  async enable(
+    name: string,
+    instanceId?: string,
+  ): Promise<{ enabled: boolean; raw: { stdout: string; stderr: string } }> {
     const id = parsePluginIdentifier(name);
     const res = await this.w2.pluginEnable(id.name, { instanceId });
     ensureW2Available(res);
@@ -239,7 +260,10 @@ export class PluginsService {
     return { enabled: true, raw: { stdout: res.stdout, stderr: res.stderr } };
   }
 
-  async disable(name: string, instanceId?: string): Promise<{ disabled: boolean; raw: { stdout: string; stderr: string } }>{
+  async disable(
+    name: string,
+    instanceId?: string,
+  ): Promise<{ disabled: boolean; raw: { stdout: string; stderr: string } }> {
     const id = parsePluginIdentifier(name);
     const res = await this.w2.pluginDisable(id.name, { instanceId });
     ensureW2Available(res);
@@ -254,4 +278,3 @@ export class PluginsService {
     return { disabled: true, raw: { stdout: res.stdout, stderr: res.stderr } };
   }
 }
-

@@ -9,6 +9,18 @@ import { CliError } from '../output/errors';
 import { blockedEnvelope, errorEnvelope, okEnvelope } from '../output/result';
 import { renderEnvelope } from '../output/renderers';
 
+type CertificateInstanceEndpoint = {
+  host: string;
+  port: number;
+};
+
+type CertApplyResult = {
+  apply?: { downloaded_root_ca_path?: string };
+  after?: { root_ca_path: string | null };
+};
+
+const fallbackCertEndpoint: CertificateInstanceEndpoint = { host: '127.0.0.1', port: 8899 };
+
 function resolvePavFlags(cmdOpts: { preview?: boolean; apply?: boolean; verify?: boolean }) {
   const preview = Boolean(cmdOpts.preview);
   const verify = Boolean(cmdOpts.verify);
@@ -17,7 +29,10 @@ function resolvePavFlags(cmdOpts: { preview?: boolean; apply?: boolean; verify?:
 }
 
 export function registerCertsResource(program: Command): void {
-  const certs = program.command('certs').alias('cert').description('Certificate setup and verification');
+  const certs = program
+    .command('certs')
+    .alias('cert')
+    .description('Certificate setup and verification');
   const service = new CertificateService();
   const instances = new InstanceService();
   const executor = new ActionExecutor();
@@ -32,12 +47,16 @@ export function registerCertsResource(program: Command): void {
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'status';
       try {
-        const inst = await instances.status(resolved.id).catch(() => ({ host: '127.0.0.1', port: 8899 } as any));
+        const inst = await instances.status(resolved.id).catch(() => fallbackCertEndpoint);
         const st = await service.status({ host: inst.host, port: inst.port });
-        process.stdout.write(renderEnvelope(okEnvelope('certs', action, st, { instance: resolved }), format));
+        process.stdout.write(
+          renderEnvelope(okEnvelope('certs', action, st, { instance: resolved }), format),
+        );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('certs', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('certs', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -51,7 +70,7 @@ export function registerCertsResource(program: Command): void {
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'guide';
       try {
-        const inst = await instances.status(resolved.id).catch(() => ({ host: '127.0.0.1', port: 8899 } as any));
+        const inst = await instances.status(resolved.id).catch(() => fallbackCertEndpoint);
         const st = await service.status({ host: inst.host, port: inst.port });
         const guide = service.trustGuide(st.root_ca_path);
         process.stdout.write(
@@ -62,7 +81,9 @@ export function registerCertsResource(program: Command): void {
         );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('certs', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('certs', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -82,7 +103,7 @@ export function registerCertsResource(program: Command): void {
       const pav = resolvePavFlags(cmdOpts);
 
       try {
-        const inst = await instances.status(resolved.id).catch(() => ({ host: '127.0.0.1', port: 8899 } as any));
+        const inst = await instances.status(resolved.id).catch(() => fallbackCertEndpoint);
         const before = await service.status({ host: inst.host, port: inst.port });
         const preview = {
           will_generate_if_missing: !before.installed,
@@ -94,7 +115,12 @@ export function registerCertsResource(program: Command): void {
         if (pav.preview && !pav.apply) {
           process.stdout.write(
             renderEnvelope(
-              okEnvelope('certs', action, { preview }, { instance: resolved, effective: false, meta: { preview: true } }),
+              okEnvelope(
+                'certs',
+                action,
+                { preview },
+                { instance: resolved, effective: false, meta: { preview: true } },
+              ),
               format,
             ),
           );
@@ -107,9 +133,14 @@ export function registerCertsResource(program: Command): void {
           {
             preview: async () => preview,
             apply: async () => {
-              const applyRes = await service.install(resolved.id, { host: inst.host, port: inst.port });
+              const applyRes = await service.install(resolved.id, {
+                host: inst.host,
+                port: inst.port,
+              });
               const after = await service.status({ host: inst.host, port: inst.port });
-              const guide = service.trustGuide(applyRes.downloaded_root_ca_path ?? after.root_ca_path);
+              const guide = service.trustGuide(
+                applyRes.downloaded_root_ca_path ?? after.root_ca_path,
+              );
               return {
                 result: { apply: applyRes, after, guide },
               };
@@ -119,9 +150,12 @@ export function registerCertsResource(program: Command): void {
         );
 
         // Always treat trust as a guided / potentially blocked step.
-        const applyInfo = (result.apply_result as any)?.apply as { downloaded_root_ca_path?: string } | undefined;
-        const after = (result.apply_result as any)?.after as { root_ca_path: string | null } | undefined;
-        const guide = service.trustGuide(applyInfo?.downloaded_root_ca_path ?? after?.root_ca_path ?? null);
+        const applyResult = result.apply_result as CertApplyResult | undefined;
+        const applyInfo = applyResult?.apply;
+        const after = applyResult?.after;
+        const guide = service.trustGuide(
+          applyInfo?.downloaded_root_ca_path ?? after?.root_ca_path ?? null,
+        );
         const perm = permissionHintForCertTrust();
         const flow = await flows.createWaitingForUser({
           current_step: 'trust_root_ca',
@@ -175,7 +209,9 @@ export function registerCertsResource(program: Command): void {
         process.stdout.write(renderEnvelope(envelope, format));
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('certs', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('certs', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -190,18 +226,13 @@ export function registerCertsResource(program: Command): void {
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'verify';
       try {
-        const inst = await instances.status(resolved.id).catch(() => ({ host: '127.0.0.1', port: 8899 } as any));
+        const inst = await instances.status(resolved.id).catch(() => fallbackCertEndpoint);
         const st = await service.status({ host: inst.host, port: inst.port });
         if (!st.installed) {
-          const envelope = blockedEnvelope(
-            'certs',
-            action,
-            st,
-            {
-              instance: resolved,
-              next_actions: [{ action: 'certs install', reason: '先生成/导出 Root CA' }],
-            },
-          );
+          const envelope = blockedEnvelope('certs', action, st, {
+            instance: resolved,
+            next_actions: [{ action: 'certs install', reason: '先生成/导出 Root CA' }],
+          });
           process.stdout.write(renderEnvelope(envelope, format));
           return;
         }
@@ -249,11 +280,16 @@ export function registerCertsResource(program: Command): void {
           return;
         }
         process.stdout.write(
-          renderEnvelope(okEnvelope('certs', action, { ...st, trust }, { instance: resolved, effective: true }), format),
+          renderEnvelope(
+            okEnvelope('certs', action, { ...st, trust }, { instance: resolved, effective: true }),
+            format,
+          ),
         );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('certs', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('certs', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });

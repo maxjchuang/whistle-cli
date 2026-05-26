@@ -34,10 +34,15 @@ export class FramesService {
     return new RuntimeClient({ baseUrl });
   }
 
-  async list(instanceId: string, sessionId: string, limit: number): Promise<{ session_id: string; count: number; items: FrameRecord[] }> {
+  async list(
+    instanceId: string,
+    sessionId: string,
+    limit: number,
+  ): Promise<{ session_id: string; count: number; items: FrameRecord[] }> {
     const client = await this.runtimeClientForInstance(instanceId);
     const res = await client.listFrames({ session_id: sessionId, limit });
-    const rawItems = Array.isArray((res as any).items) ? ((res as any).items as any[]) : [];
+    const payload = res as { items?: unknown };
+    const rawItems = Array.isArray(payload.items) ? payload.items : [];
     const items: FrameRecord[] = rawItems.map((r) => {
       const frame_id = String(r.frame_id ?? r.id ?? r.frameId ?? '');
       return {
@@ -51,9 +56,17 @@ export class FramesService {
     return { session_id: sessionId, count: items.length, items };
   }
 
-  async send(instanceId: string, sessionId: string, data: string, direction?: FrameDirection): Promise<Record<string, unknown>> {
+  async send(
+    instanceId: string,
+    sessionId: string,
+    data: string,
+    direction?: FrameDirection,
+  ): Promise<Record<string, unknown>> {
     const client = await this.runtimeClientForInstance(instanceId);
-    return client.sendFrame({ session_id: sessionId, data, direction: direction === 'unknown' ? undefined : direction });
+    return client.sendFrame({
+      session_id: sessionId,
+      data,
+      direction: direction === 'unknown' ? undefined : direction,
+    });
   }
 }
-

@@ -318,7 +318,10 @@ export class RulesService {
   private resolveRuleName(props: RulesProperties, fileId: string): string {
     const v = (props as Record<string, unknown>)[fileId];
     if (typeof v === 'string' && v.trim()) return v;
-    if (v && typeof v === 'object' && typeof (v as any).name === 'string') return (v as any).name;
+    if (v && typeof v === 'object') {
+      const candidate = v as { name?: unknown };
+      if (typeof candidate.name === 'string') return candidate.name;
+    }
     return fileId;
   }
 

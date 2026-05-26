@@ -14,8 +14,8 @@ export interface FakeCaptureBackendOptions {
   failDefaultStateToggleAfterAdd?: boolean;
   failGetData?: boolean;
   disableCaptureRuntimeRoutes?: boolean;
-  nativeCaptureData?: Record<string, any>;
-  nativeCaptureSequence?: Array<Record<string, any>>;
+  nativeCaptureData?: Record<string, unknown>;
+  nativeCaptureSequence?: Array<Record<string, unknown>>;
 }
 
 export async function startFakeCaptureBackend(
@@ -41,7 +41,7 @@ export async function startFakeCaptureBackend(
     });
   }
 
-  async function readJson(req: http.IncomingMessage): Promise<any> {
+  async function readJson(req: http.IncomingMessage): Promise<unknown> {
     return await new Promise((resolve, reject) => {
       let buf = '';
       req.setEncoding('utf8');

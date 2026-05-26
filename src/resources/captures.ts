@@ -63,6 +63,49 @@ function assertRuntimeOnlyBackend(backend: unknown, action: string): void {
   });
 }
 
+type CaptureFindOptions = {
+  host?: string;
+  path?: string;
+  method?: string;
+  status?: string | number;
+  keyword?: string;
+  limit?: string | number;
+  backend?: string;
+  fields?: string;
+};
+
+type CaptureGetOptions = {
+  id: string;
+  backend?: string;
+};
+
+type CaptureAssertRequestCommandOptions = CaptureFindOptions & {
+  timeout?: string;
+  pollInterval?: string;
+  save?: string;
+};
+
+type CaptureAssertHeaderOptions = {
+  host: string;
+  path?: string;
+  header: string;
+  equals: string;
+  duration?: string;
+  backend?: string;
+};
+
+type CaptureWatchOptions = CaptureFindOptions & {
+  expectHeader?: string;
+  duration?: string;
+  timeout?: string;
+  pollInterval?: string;
+  watch?: boolean;
+};
+
+type CaptureExportOptions = CaptureFindOptions & {
+  exportFormat?: string;
+};
+
 export function registerCapturesResource(program: Command): void {
   const captures = program.command('captures').description('Inspect and export captured traffic');
   const service = new CapturesService();
@@ -78,7 +121,7 @@ export function registerCapturesResource(program: Command): void {
     .option('--limit <n>', 'Max items', '30')
     .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
     .option('--fields <fields>', 'Comma-separated summary fields to return')
-    .action(async (cmdOpts: any) => {
+    .action(async (cmdOpts: CaptureFindOptions) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
       const resolved = await resolveInstanceId(opts.instance);
@@ -95,14 +138,15 @@ export function registerCapturesResource(program: Command): void {
         const limit = Number(cmdOpts.limit ?? 30);
         const backend = assertFindBackend(cmdOpts.backend);
         const out = await service.find({ instance_id: resolved.id, filters, limit, backend });
-        if (cmdOpts.fields) {
-          (out as any).items = service.summarizeRecords(out.items, {
-            fields: splitFields(cmdOpts.fields),
-          });
-        }
+        const data = cmdOpts.fields
+          ? {
+              ...out,
+              items: service.summarizeRecords(out.items, { fields: splitFields(cmdOpts.fields) }),
+            }
+          : out;
         process.stdout.write(
           renderEnvelope(
-            okEnvelope('captures', action, out, { instance: resolved, effective: true }),
+            okEnvelope('captures', action, data, { instance: resolved, effective: true }),
             format,
           ),
         );
@@ -120,13 +164,13 @@ export function registerCapturesResource(program: Command): void {
     .description('Get a single capture record')
     .requiredOption('--id <id>', 'Capture id')
     .option('--backend <backend>', 'Capture backend: runtime', 'runtime')
-    .action(async (cmdOpts: { id: string }) => {
+    .action(async (cmdOpts: CaptureGetOptions) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'get';
       try {
-        assertRuntimeOnlyBackend((cmdOpts as any).backend, action);
+        assertRuntimeOnlyBackend(cmdOpts.backend, action);
         const item = await service.get(resolved.id, cmdOpts.id);
         process.stdout.write(
           renderEnvelope(
@@ -153,7 +197,7 @@ export function registerCapturesResource(program: Command): void {
     .option('--keyword <keyword>', 'Search keyword')
     .option('--limit <n>', 'Max events before ending (for safety)', '20')
     .option('--backend <backend>', 'Capture backend: runtime', 'runtime')
-    .action(async (cmdOpts: any) => {
+    .action(async (cmdOpts: CaptureFindOptions) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
       const resolved = await resolveInstanceId(opts.instance);
@@ -171,6 +215,7 @@ export function registerCapturesResource(program: Command): void {
       let count = 0;
       try {
         assertRuntimeOnlyBackend(cmdOpts.backend, action);
+        const backend = 'runtime' as const;
         // v1 safety: enforce ndjson for tail
         if (format !== 'ndjson') {
           throw new CliError({
@@ -183,7 +228,7 @@ export function registerCapturesResource(program: Command): void {
           instance_id: resolved.id,
           filters,
           limit: max,
-          backend: cmdOpts.backend,
+          backend,
         })) {
           const env = okEnvelope('captures', action, item, {
             instance: resolved,
@@ -227,7 +272,7 @@ export function registerCapturesResource(program: Command): void {
     .option('--fields <fields>', 'Comma-separated summary fields to return')
     .option('--save <file>', 'Save the matched redacted summary to a JSON file')
     .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
-    .action(async (cmdOpts: any) => {
+    .action(async (cmdOpts: CaptureAssertRequestCommandOptions) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
       const resolved = await resolveInstanceId(opts.instance);
@@ -279,7 +324,7 @@ export function registerCapturesResource(program: Command): void {
     .requiredOption('--equals <value>', 'Expected request header value')
     .option('--duration <duration>', 'Observation duration, e.g. 60s', '60s')
     .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
-    .action(async (cmdOpts: any) => {
+    .action(async (cmdOpts: CaptureAssertHeaderOptions) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
       const resolved = await resolveInstanceId(opts.instance);
@@ -338,7 +383,7 @@ export function registerCapturesResource(program: Command): void {
     .option('--fields <fields>', 'Comma-separated summary fields for request watching')
     .option('--watch', 'Keep watching until interrupted')
     .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
-    .action(async (cmdOpts: any) => {
+    .action(async (cmdOpts: CaptureWatchOptions) => {
       const opts = program.opts();
       const format = (opts.format ?? 'ndjson') as OutputFormat;
       const resolved = await resolveInstanceId(opts.instance);
@@ -469,7 +514,7 @@ export function registerCapturesResource(program: Command): void {
     .option('--limit <n>', 'Max items', '200')
     .option('--export-format <fmt>', 'Export format: har|json', 'json')
     .option('--backend <backend>', 'Capture backend: runtime', 'runtime')
-    .action(async (cmdOpts: any) => {
+    .action(async (cmdOpts: CaptureExportOptions) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
       const resolved = await resolveInstanceId(opts.instance);
@@ -486,12 +531,13 @@ export function registerCapturesResource(program: Command): void {
         const limit = Number(cmdOpts.limit ?? 200);
         const export_format = cmdOpts.exportFormat === 'har' ? 'har' : 'json';
         assertRuntimeOnlyBackend(cmdOpts.backend, action);
+        const backend = 'runtime' as const;
         const out = await service.export({
           instance_id: resolved.id,
           filters,
           limit,
           export_format,
-          backend: cmdOpts.backend,
+          backend,
         });
         process.stdout.write(
           renderEnvelope(

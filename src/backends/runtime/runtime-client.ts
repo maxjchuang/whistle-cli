@@ -1,5 +1,13 @@
 import { CliError } from '../../output/errors';
 
+type StreamReader = {
+  read(): Promise<{ value?: Uint8Array; done?: boolean }>;
+};
+
+type ReadableBody = {
+  getReader?: () => StreamReader;
+};
+
 export interface RuntimeClientOptions {
   baseUrl: string;
   timeoutMs?: number;
@@ -29,7 +37,8 @@ export class RuntimeClient {
           code: 'CAPTURE_BACKEND_UNAVAILABLE',
           message: 'Capture backend returned non-OK response',
           reason: `${res.status} ${res.statusText}`,
-          suggested_fix: 'Ensure the capture backend is reachable and supports the whistle-cli runtime API.',
+          suggested_fix:
+            'Ensure the capture backend is reachable and supports the whistle-cli runtime API.',
         });
       }
       return (await res.json()) as T;
@@ -63,7 +72,8 @@ export class RuntimeClient {
           code: 'CAPTURE_BACKEND_UNAVAILABLE',
           message: 'Runtime backend returned non-OK response',
           reason: `${res.status} ${res.statusText}`,
-          suggested_fix: 'Ensure the runtime backend is reachable and supports the whistle-cli runtime API.',
+          suggested_fix:
+            'Ensure the runtime backend is reachable and supports the whistle-cli runtime API.',
         });
       }
       return (await res.json()) as T;
@@ -97,7 +107,9 @@ export class RuntimeClient {
     if (query.keyword) params.set('keyword', query.keyword);
     if (typeof query.limit === 'number') params.set('limit', String(query.limit));
     const qs = params.toString();
-    return this.getJson<{ items: unknown[] }>(`/__whistle_cli__/captures/find${qs ? `?${qs}` : ''}`);
+    return this.getJson<{ items: unknown[] }>(
+      `/__whistle_cli__/captures/find${qs ? `?${qs}` : ''}`,
+    );
   }
 
   async getCapture(id: string): Promise<{ item: unknown } | unknown> {
@@ -164,7 +176,7 @@ export class RuntimeClient {
       const decoder = new TextDecoder();
       let buf = '';
       // Node fetch body is a Web ReadableStream.
-      const reader = (res.body as any).getReader?.();
+      const reader = (res.body as unknown as ReadableBody).getReader?.();
       if (!reader) {
         throw new CliError({
           code: 'CAPTURE_BACKEND_UNAVAILABLE',
@@ -239,7 +251,11 @@ export class RuntimeClient {
     return this.getJson<{ items: unknown[] }>(`/__whistle_cli__/frames/list?${params.toString()}`);
   }
 
-  async sendFrame(body: { session_id: string; data: string; direction?: 'to_server' | 'to_client' }): Promise<Record<string, unknown>> {
+  async sendFrame(body: {
+    session_id: string;
+    data: string;
+    direction?: 'to_server' | 'to_client';
+  }): Promise<Record<string, unknown>> {
     return this.postJson('/__whistle_cli__/frames/send', body);
   }
 }

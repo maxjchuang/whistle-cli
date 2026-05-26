@@ -14,6 +14,16 @@ function assertFindBackend(backend: unknown): 'auto' | 'whistle-web' | 'runtime'
   });
 }
 
+type CaptureShortcutOptions = {
+  host?: string;
+  path?: string;
+  method?: string;
+  status?: string | number;
+  keyword?: string;
+  limit?: string | number;
+  backend?: string;
+};
+
 export function registerCapturesShortcuts(program: Command): void {
   const capture = program.command('capture').description('AI-friendly capture shortcuts');
   const service = new CapturesService();
@@ -28,7 +38,7 @@ export function registerCapturesShortcuts(program: Command): void {
     .option('--keyword <keyword>', 'Search keyword')
     .option('--limit <n>', 'Max items', '30')
     .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
-    .action(async (cmdOpts: any) => {
+    .action(async (cmdOpts: CaptureShortcutOptions) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
@@ -44,10 +54,17 @@ export function registerCapturesShortcuts(program: Command): void {
         const limit = Number(cmdOpts.limit ?? 30);
         const backend = assertFindBackend(cmdOpts.backend);
         const out = await service.find({ instance_id: resolved.id, filters, limit, backend });
-        process.stdout.write(renderEnvelope(okEnvelope('captures', action, out, { instance: resolved, effective: true }), format));
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope('captures', action, out, { instance: resolved, effective: true }),
+            format,
+          ),
+        );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -60,7 +77,7 @@ export function registerCapturesShortcuts(program: Command): void {
     .option('--status <status>', 'Status code (default: 500)', '500')
     .option('--limit <n>', 'Max items', '30')
     .option('--backend <backend>', 'Capture backend: auto|whistle-web|runtime', 'auto')
-    .action(async (cmdOpts: any) => {
+    .action(async (cmdOpts: CaptureShortcutOptions) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
@@ -74,10 +91,17 @@ export function registerCapturesShortcuts(program: Command): void {
         const limit = Number(cmdOpts.limit ?? 30);
         const backend = assertFindBackend(cmdOpts.backend);
         const out = await service.find({ instance_id: resolved.id, filters, limit, backend });
-        process.stdout.write(renderEnvelope(okEnvelope('captures', action, out, { instance: resolved, effective: true }), format));
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope('captures', action, out, { instance: resolved, effective: true }),
+            format,
+          ),
+        );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
