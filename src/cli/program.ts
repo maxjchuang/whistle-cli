@@ -12,6 +12,7 @@ import { registerCapturesResource } from '../resources/captures';
 import { registerComposerResource } from '../resources/composer';
 import { registerFramesResource } from '../resources/frames';
 import { registerPluginsResource } from '../resources/plugins';
+import { registerRuntimeResource } from '../resources/runtime';
 import { registerBootstrapShortcuts } from '../shortcuts/bootstrap';
 import { registerRulesShortcuts } from '../shortcuts/rules';
 import { registerCapturesShortcuts } from '../shortcuts/captures';
@@ -61,6 +62,7 @@ export function buildProgram(): Command {
   registerComposerResource(program);
   registerFramesResource(program);
   registerPluginsResource(program);
+  registerRuntimeResource(program);
 
   registerBootstrapShortcuts(program);
   registerRulesShortcuts(program);

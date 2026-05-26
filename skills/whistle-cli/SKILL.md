@@ -97,6 +97,27 @@ Intent filters:
   - `--host app.example.com`
   - `--path /space/api/workspace/base_ai/`
 
+### Optional Runtime Backend
+
+Use the runtime backend when the user explicitly needs `--backend runtime`, replay/compose operations, or a real `__whistle_cli__` API instead of Whistle Web fallback:
+
+1. Confirm the Whistle Web API URL:
+   - `whistle-cli --format json instance status`
+2. Start the backend in a long-running shell:
+   - `whistle-cli --format json runtime serve --target-url http://127.0.0.1:8899 --host 127.0.0.1 --port 8898`
+3. In the command shell used for runtime operations, set:
+   - `export WHISTLE_CLI_RUNTIME_URL=http://127.0.0.1:8898`
+4. Use runtime-backed commands:
+   - `whistle-cli --format json captures find --backend runtime --host app.example.com`
+   - `whistle-cli --format ndjson captures tail --backend runtime --host app.example.com --limit 20`
+   - `whistle-cli --format json composer compose --method GET --url https://example.com --apply`
+
+Runtime backend limitations:
+
+- Capture routes are backed by Whistle Web capture data.
+- Composer routes execute local HTTP requests.
+- Frame routes currently return `UNSUPPORTED_OPERATION`; do not present frame list/send as available runtime functionality.
+
 ### Raw fallback
 
 - `whistle-cli raw w2 status`
