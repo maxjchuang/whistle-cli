@@ -5,7 +5,7 @@ import { resolveInstanceId } from '../shared/instance-context';
 import { CliError } from '../output/errors';
 import { errorEnvelope, okEnvelope } from '../output/result';
 import { renderEnvelope } from '../output/renderers';
-import { ValuesService } from '../domain/values-service';
+import { ValuesService, type ValueRollbackSnapshot } from '../domain/values-service';
 import { ActionExecutor } from '../domain/action-executor';
 
 function resolvePavFlags(cmdOpts: { preview?: boolean; apply?: boolean; verify?: boolean }) {
@@ -13,6 +13,31 @@ function resolvePavFlags(cmdOpts: { preview?: boolean; apply?: boolean; verify?:
   const verify = Boolean(cmdOpts.verify);
   const apply = Boolean(cmdOpts.apply) || verify || (!preview && !cmdOpts.apply && !cmdOpts.verify);
   return { preview, apply, verify };
+}
+
+type ValuesRollbackHandle = {
+  type?: unknown;
+  snapshot?: unknown;
+};
+
+type ValuesCommandOptions = {
+  key: string;
+  value?: string;
+  file?: string;
+  out?: string;
+  preview?: boolean;
+  apply?: boolean;
+  verify?: boolean;
+  rollback?: string;
+};
+
+function isValueRollbackSnapshot(value: unknown): value is ValueRollbackSnapshot {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as { existed?: unknown }).existed === 'boolean' &&
+    typeof (value as { key?: unknown }).key === 'string'
+  );
 }
 
 async function runValuesRollback(
@@ -29,10 +54,15 @@ async function runValuesRollback(
       if (!handle || typeof handle !== 'object') {
         throw new CliError({ code: 'UNSUPPORTED_OPERATION', message: 'Invalid rollback handle' });
       }
-      const h = handle as any;
+      const h = handle as ValuesRollbackHandle;
       if (h.type === 'values.restore') {
-        const snapshot = h.snapshot as any;
-        return service.restore(snapshot, resolved.id);
+        if (!isValueRollbackSnapshot(h.snapshot)) {
+          throw new CliError({
+            code: 'UNSUPPORTED_OPERATION',
+            message: 'Invalid values rollback snapshot',
+          });
+        }
+        return service.restore(h.snapshot, resolved.id);
       }
       throw new CliError({
         code: 'UNSUPPORTED_OPERATION',
@@ -43,7 +73,10 @@ async function runValuesRollback(
   );
 
   process.stdout.write(
-    renderEnvelope(okEnvelope('values', 'rollback', res, { instance: resolved, effective: true }), format as OutputFormat),
+    renderEnvelope(
+      okEnvelope('values', 'rollback', res, { instance: resolved, effective: true }),
+      format as OutputFormat,
+    ),
   );
 }
 
@@ -66,7 +99,9 @@ export function registerValuesResource(program: Command): void {
         await runValuesRollback(executor, service, resolved, cmdOpts.actionId, format);
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -81,10 +116,17 @@ export function registerValuesResource(program: Command): void {
       const action = 'list';
       try {
         const data = await service.list(resolved.id);
-        process.stdout.write(renderEnvelope(okEnvelope('values', action, { values: data }, { instance: resolved }), format));
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope('values', action, { values: data }, { instance: resolved }),
+            format,
+          ),
+        );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -100,10 +142,14 @@ export function registerValuesResource(program: Command): void {
       const action = 'get';
       try {
         const data = await service.get(cmdOpts.key, resolved.id);
-        process.stdout.write(renderEnvelope(okEnvelope('values', action, data, { instance: resolved }), format));
+        process.stdout.write(
+          renderEnvelope(okEnvelope('values', action, data, { instance: resolved }), format),
+        );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -117,19 +163,24 @@ export function registerValuesResource(program: Command): void {
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
     .option('--rollback <actionId>', 'Rollback a previous action instead of setting')
-    .action(async (cmdOpts: { key: string; value: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
+    .action(async (cmdOpts: ValuesCommandOptions & { value: string }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'set';
       const pav = resolvePavFlags(cmdOpts);
 
-      if ((cmdOpts as any).rollback) {
+      if (cmdOpts.rollback) {
         try {
-          await runValuesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+          await runValuesRollback(executor, service, resolved, String(cmdOpts.rollback), format);
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('values', 'rollback', err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(
+              errorEnvelope('values', 'rollback', err, { instance: resolved }),
+              format,
+            ),
+          );
           process.exitCode = 1;
         }
         return;
@@ -139,12 +190,18 @@ export function registerValuesResource(program: Command): void {
           { resource: 'values', action, instance: resolved },
           pav,
           {
-            preview: async () => ({ will_set: cmdOpts.key, bytes: Buffer.byteLength(cmdOpts.value, 'utf8') }),
+            preview: async () => ({
+              will_set: cmdOpts.key,
+              bytes: Buffer.byteLength(cmdOpts.value, 'utf8'),
+            }),
             apply: async () => {
               const snap = await service.snapshot(cmdOpts.key, resolved.id);
               const out = await service.set(cmdOpts.key, cmdOpts.value, resolved.id);
               if (!snap.existed) snap.created_file_id = out.entry.file_id;
-              return { result: out, rollback: { type: 'values.restore', snapshot: snap, instanceId: resolved.id } };
+              return {
+                result: out,
+                rollback: { type: 'values.restore', snapshot: snap, instanceId: resolved.id },
+              };
             },
             verify: async () => service.get(cmdOpts.key, resolved.id),
           },
@@ -162,7 +219,9 @@ export function registerValuesResource(program: Command): void {
         );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -175,19 +234,24 @@ export function registerValuesResource(program: Command): void {
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
     .option('--rollback <actionId>', 'Rollback a previous action instead of removing')
-    .action(async (cmdOpts: { key: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
+    .action(async (cmdOpts: ValuesCommandOptions) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'remove';
       const pav = resolvePavFlags(cmdOpts);
 
-      if ((cmdOpts as any).rollback) {
+      if (cmdOpts.rollback) {
         try {
-          await runValuesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+          await runValuesRollback(executor, service, resolved, String(cmdOpts.rollback), format);
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('values', 'rollback', err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(
+              errorEnvelope('values', 'rollback', err, { instance: resolved }),
+              format,
+            ),
+          );
           process.exitCode = 1;
         }
         return;
@@ -202,7 +266,10 @@ export function registerValuesResource(program: Command): void {
             apply: async () => {
               const snap = await service.snapshot(cmdOpts.key, resolved.id);
               const out = await service.remove(cmdOpts.key, resolved.id);
-              return { result: out, rollback: { type: 'values.restore', snapshot: snap, instanceId: resolved.id } };
+              return {
+                result: out,
+                rollback: { type: 'values.restore', snapshot: snap, instanceId: resolved.id },
+              };
             },
             verify: async () => ({ removed: true }),
           },
@@ -220,7 +287,9 @@ export function registerValuesResource(program: Command): void {
         );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -234,19 +303,24 @@ export function registerValuesResource(program: Command): void {
     .option('--apply', 'Apply the change')
     .option('--verify', 'Verify after apply')
     .option('--rollback <actionId>', 'Rollback a previous action instead of importing')
-    .action(async (cmdOpts: { key: string; file: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
+    .action(async (cmdOpts: ValuesCommandOptions & { file: string }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'import';
       const pav = resolvePavFlags(cmdOpts);
 
-      if ((cmdOpts as any).rollback) {
+      if (cmdOpts.rollback) {
         try {
-          await runValuesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+          await runValuesRollback(executor, service, resolved, String(cmdOpts.rollback), format);
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('values', 'rollback', err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(
+              errorEnvelope('values', 'rollback', err, { instance: resolved }),
+              format,
+            ),
+          );
           process.exitCode = 1;
         }
         return;
@@ -265,7 +339,10 @@ export function registerValuesResource(program: Command): void {
               const snap = await service.snapshot(cmdOpts.key, resolved.id);
               const out = await service.importFromFile(cmdOpts.key, cmdOpts.file, resolved.id);
               if (!snap.existed) snap.created_file_id = out.entry.file_id;
-              return { result: out, rollback: { type: 'values.restore', snapshot: snap, instanceId: resolved.id } };
+              return {
+                result: out,
+                rollback: { type: 'values.restore', snapshot: snap, instanceId: resolved.id },
+              };
             },
             verify: async () => service.get(cmdOpts.key, resolved.id),
           },
@@ -283,7 +360,9 @@ export function registerValuesResource(program: Command): void {
         );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });
@@ -297,19 +376,24 @@ export function registerValuesResource(program: Command): void {
     .option('--apply', 'Write the file')
     .option('--verify', 'Verify after write')
     .option('--rollback <actionId>', 'Rollback a previous action instead of exporting')
-    .action(async (cmdOpts: { key: string; out: string; preview?: boolean; apply?: boolean; verify?: boolean }) => {
+    .action(async (cmdOpts: ValuesCommandOptions & { out: string }) => {
       const opts = program.opts();
       const format = opts.format ?? 'json';
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'export';
       const pav = resolvePavFlags(cmdOpts);
 
-      if ((cmdOpts as any).rollback) {
+      if (cmdOpts.rollback) {
         try {
-          await runValuesRollback(executor, service, resolved, String((cmdOpts as any).rollback), format);
+          await runValuesRollback(executor, service, resolved, String(cmdOpts.rollback), format);
         } catch (e) {
           const err = CliError.fromUnknown(e);
-          process.stderr.write(renderEnvelope(errorEnvelope('values', 'rollback', err, { instance: resolved }), format));
+          process.stderr.write(
+            renderEnvelope(
+              errorEnvelope('values', 'rollback', err, { instance: resolved }),
+              format,
+            ),
+          );
           process.exitCode = 1;
         }
         return;
@@ -344,7 +428,9 @@ export function registerValuesResource(program: Command): void {
         );
       } catch (e) {
         const err = CliError.fromUnknown(e);
-        process.stderr.write(renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format));
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('values', action, err, { instance: resolved }), format),
+        );
         process.exitCode = 1;
       }
     });

@@ -63,6 +63,40 @@ For live request-header changes, prefer runtime commands over direct storage edi
 
 Do not edit Whistle storage files for live rule changes unless the CLI runtime commands are unavailable and the user explicitly accepts that Whistle may need a reload.
 
+### Capture Workflow
+
+For agent-driven packet capture, prefer scoped watch/assert commands over broad keyword searches:
+
+1. Check Whistle and proxy state:
+   - `whistle-cli --format json instance status`
+   - `whistle-cli --format json proxy status`
+2. Convert the user's target into host/path/method filters.
+3. Start the listener before asking the user to trigger the UI:
+   - `whistle-cli --format json captures assert-request --backend whistle-web --host app.example.com --path /space/api/workspace/chatbot/ --keyword /skills --timeout 60s --poll-interval 2s --fields capture_id,method,status_code,path,x_tt_logid,request_id,env,referer,matched_rules_summary`
+4. Tell the user the listener is active and ask for the exact UI action.
+5. On match, immediately report `x_tt_logid`, `request_id`, `capture_id`, method, status, path, injected env headers, and matched rule summary.
+6. On timeout, report that no matching capture was observed and ask the user to retrigger the exact UI action while the listener is active.
+
+Safety defaults:
+
+- Use `--fields` for capture output unless the user explicitly needs raw packets.
+- Do not print cookies, authorization headers, CSRF tokens, session tokens, or full raw headers in user-facing responses.
+- Use `--save <file>` for a redacted matched summary when evidence must survive Whistle's short query window.
+
+Intent filters:
+
+- Chatbot skill list:
+  - `--host app.example.com`
+  - `--path /space/api/workspace/chatbot/`
+  - `--keyword /skills`
+- Chatbot trigger:
+  - `--host app.example.com`
+  - `--path /space/api/workspace/chatbot/`
+  - `--keyword /trigger`
+- Base AI status:
+  - `--host app.example.com`
+  - `--path /space/api/workspace/base_ai/`
+
 ### Raw fallback
 
 - `whistle-cli raw w2 status`

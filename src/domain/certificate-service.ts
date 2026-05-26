@@ -1,4 +1,3 @@
-import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { W2Client } from '../backends/raw/w2-client';
@@ -71,7 +70,10 @@ export class CertificateService {
     };
   }
 
-  async install(instanceId?: string, opts?: { host?: string; port?: number }): Promise<{
+  async install(
+    instanceId?: string,
+    opts?: { host?: string; port?: number },
+  ): Promise<{
     w2_stdout: string;
     w2_stderr: string;
     w2_exitCode: number;
@@ -85,7 +87,8 @@ export class CertificateService {
         code: 'UNSUPPORTED_OPERATION',
         message: 'w2 ca failed',
         reason: res.stderr || res.stdout || `exitCode=${res.exitCode}`,
-        suggested_fix: 'Try running `whistle-cli raw w2 ca` to see full output and ensure Whistle can initialize its CA.',
+        suggested_fix:
+          'Try running `whistle-cli raw w2 ca` to see full output and ensure Whistle can initialize its CA.',
       });
     }
 
@@ -146,7 +149,10 @@ export class CertificateService {
 
     // Best-effort automatic trust checks (Linux).
     if (process.platform === 'linux') {
-      const caBundleCandidates = ['/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt'];
+      const caBundleCandidates = [
+        '/etc/ssl/certs/ca-certificates.crt',
+        '/etc/pki/tls/certs/ca-bundle.crt',
+      ];
       for (const bundle of caBundleCandidates) {
         const exists = await fs
           .stat(bundle)

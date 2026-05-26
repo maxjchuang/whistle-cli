@@ -1,7 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { defaultWhistleStorageDir, type WhistleStorageLocation } from '../backends/storage/whistle-storage';
+import {
+  defaultWhistleStorageDir,
+  type WhistleStorageLocation,
+} from '../backends/storage/whistle-storage';
 import { CliError } from '../output/errors';
 
 export interface ValueEntry {
@@ -77,7 +80,7 @@ function extractKeyToFileId(props: ValuesProperties): Record<string, string> {
 }
 
 function generateFileId(): string {
-  // Whistle commonly uses numeric-ish ids, but any stable filename is acceptable for v1.
+  // Whistle commonly uses numeric-ish ids; stable filenames are acceptable for v1.
   return `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 }
 
@@ -107,7 +110,10 @@ export class ValuesService {
     return props;
   }
 
-  private async writeProps(storage: WhistleStorageLocation, props: ValuesProperties): Promise<void> {
+  private async writeProps(
+    storage: WhistleStorageLocation,
+    props: ValuesProperties,
+  ): Promise<void> {
     await writeTextFile(this.propertiesPath(storage), JSON.stringify(props));
   }
 
@@ -125,7 +131,10 @@ export class ValuesService {
     }
   }
 
-  async restore(snapshot: ValueRollbackSnapshot, instanceId?: string): Promise<{ restored: boolean }>{
+  async restore(
+    snapshot: ValueRollbackSnapshot,
+    instanceId?: string,
+  ): Promise<{ restored: boolean }> {
     const storage = this.resolveStorage(instanceId);
 
     if (!snapshot.existed) {
@@ -133,7 +142,9 @@ export class ValuesService {
       await this.remove(snapshot.key, instanceId);
       // Best-effort: cleanup created file if we know it.
       if (snapshot.created_file_id) {
-        await fs.unlink(path.join(this.filesDir(storage), snapshot.created_file_id)).catch(() => undefined);
+        await fs
+          .unlink(path.join(this.filesDir(storage), snapshot.created_file_id))
+          .catch(() => undefined);
       }
       return { restored: true };
     }
@@ -149,7 +160,9 @@ export class ValuesService {
 
     // Best-effort: remove created file if it differs.
     if (snapshot.created_file_id && snapshot.created_file_id !== fileId) {
-      await fs.unlink(path.join(this.filesDir(storage), snapshot.created_file_id)).catch(() => undefined);
+      await fs
+        .unlink(path.join(this.filesDir(storage), snapshot.created_file_id))
+        .catch(() => undefined);
     }
 
     return { restored: true };
@@ -212,7 +225,11 @@ export class ValuesService {
     };
   }
 
-  async set(key: string, value: string, instanceId?: string): Promise<{ changed: boolean; entry: ValueEntry }> {
+  async set(
+    key: string,
+    value: string,
+    instanceId?: string,
+  ): Promise<{ changed: boolean; entry: ValueEntry }> {
     const storage = this.resolveStorage(instanceId);
     const props = await this.readProps(storage);
     const mapping = extractKeyToFileId(props);

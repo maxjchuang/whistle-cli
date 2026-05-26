@@ -5,7 +5,7 @@ export interface PermissionHint {
 }
 
 function isRootLikeUser(): boolean {
-  const getuid = (process as any).getuid as undefined | (() => number);
+  const getuid = (process as NodeJS.Process & { getuid?: () => number }).getuid;
   if (!getuid) return false;
   return getuid() === 0;
 }
@@ -15,7 +15,8 @@ export function permissionHintForCertTrust(): PermissionHint {
     return {
       required: true,
       reason: '在 Linux 上把根证书加入系统信任通常需要 sudo/root 权限。',
-      suggested_fix: '使用 sudo 执行系统信任更新命令（例如 Debian/Ubuntu: update-ca-certificates）。',
+      suggested_fix:
+        '使用 sudo 执行系统信任更新命令（例如 Debian/Ubuntu: update-ca-certificates）。',
     };
   }
   return { required: false };

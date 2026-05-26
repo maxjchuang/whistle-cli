@@ -10,10 +10,19 @@ module.exports = [
   {
     languageOptions: {
       globals: {
+        AbortController: 'readonly',
+        Buffer: 'readonly',
         console: 'readonly',
+        clearTimeout: 'readonly',
+        fetch: 'readonly',
         process: 'readonly',
+        RequestInit: 'readonly',
         require: 'readonly',
         module: 'readonly',
+        setTimeout: 'readonly',
+        TextDecoder: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
         __dirname: 'readonly',
       },
     },
@@ -40,6 +49,8 @@ module.exports = [
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
+      '@typescript-eslint/no-explicit-any': 'error',
+      'no-undef': 'off',
     },
   },
 ];

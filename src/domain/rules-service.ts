@@ -1,7 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { defaultWhistleStorageDir, type WhistleStorageLocation } from '../backends/storage/whistle-storage';
+import {
+  defaultWhistleStorageDir,
+  type WhistleStorageLocation,
+} from '../backends/storage/whistle-storage';
 import { WhistleWebClient } from '../backends/whistle-web';
 import { CliError } from '../output/errors';
 import { loadConfig } from '../shared/config';
@@ -90,7 +93,8 @@ function renderSimpleDiff(before: string, after: string): string {
   const aLines = a.split('\n');
 
   let prefix = 0;
-  while (prefix < bLines.length && prefix < aLines.length && bLines[prefix] === aLines[prefix]) prefix++;
+  while (prefix < bLines.length && prefix < aLines.length && bLines[prefix] === aLines[prefix])
+    prefix++;
 
   let bSuffix = bLines.length - 1;
   let aSuffix = aLines.length - 1;
@@ -102,7 +106,9 @@ function renderSimpleDiff(before: string, after: string): string {
   const out: string[] = [];
   out.push('--- before');
   out.push('+++ after');
-  out.push(`@@ -${prefix + 1},${Math.max(0, bSuffix - prefix + 1)} +${prefix + 1},${Math.max(0, aSuffix - prefix + 1)} @@`);
+  out.push(
+    `@@ -${prefix + 1},${Math.max(0, bSuffix - prefix + 1)} +${prefix + 1},${Math.max(0, aSuffix - prefix + 1)} @@`,
+  );
 
   for (let i = prefix; i <= bSuffix; i++) {
     if (i >= 0 && i < bLines.length) out.push(`- ${bLines[i]}`);
@@ -172,11 +178,11 @@ function matcherMatchesUrl(pattern: string, targetUrl: string): boolean {
   const regex = regexFromMatcher(trimmed);
   if (regex) return regex.test(targetUrl);
 
-  let parsed: URL | null = null;
+  let parsed: URL;
   try {
     parsed = new URL(targetUrl);
   } catch {
-    parsed = null;
+    return false;
   }
 
   if (/^https?:\/\//i.test(trimmed)) {
@@ -201,17 +207,25 @@ function matcherMatchesUrl(pattern: string, targetUrl: string): boolean {
   if (!parsed) return targetUrl.includes(trimmed);
 
   const hostAndPath = `${parsed.host}${parsed.pathname}`;
-  if (trimmed.startsWith('/')) return parsed.pathname === trimmed || parsed.pathname.includes(trimmed);
-  if (trimmed.includes('/')) return hostAndPath === trimmed || hostAndPath.startsWith(`${trimmed}/`);
+  if (trimmed.startsWith('/'))
+    return parsed.pathname === trimmed || parsed.pathname.includes(trimmed);
+  if (trimmed.includes('/'))
+    return hostAndPath === trimmed || hostAndPath.startsWith(`${trimmed}/`);
   return parsed.hostname === trimmed || parsed.hostname.endsWith(`.${trimmed}`);
 }
 
-function parseReqHeadersLine(raw: string): { pattern: string; headers: Array<{ header: string; value: string }> } | null {
+function parseReqHeadersLine(
+  raw: string,
+): { pattern: string; headers: Array<{ header: string; value: string }> } | null {
   const opIndex = raw.indexOf('reqHeaders://');
   if (opIndex < 0) return null;
 
   const pattern = raw.slice(0, opIndex).trim();
-  const payload = raw.slice(opIndex + 'reqHeaders://'.length).trim().split(/\s+/)[0] ?? '';
+  const payload =
+    raw
+      .slice(opIndex + 'reqHeaders://'.length)
+      .trim()
+      .split(/\s+/)[0] ?? '';
   if (!pattern || !payload) return null;
 
   return { pattern, headers: splitHeaderPayload(payload) };
@@ -304,7 +318,10 @@ export class RulesService {
   private resolveRuleName(props: RulesProperties, fileId: string): string {
     const v = (props as Record<string, unknown>)[fileId];
     if (typeof v === 'string' && v.trim()) return v;
-    if (v && typeof v === 'object' && typeof (v as any).name === 'string') return (v as any).name;
+    if (v && typeof v === 'object') {
+      const candidate = v as { name?: unknown };
+      if (typeof candidate.name === 'string') return candidate.name;
+    }
     return fileId;
   }
 
@@ -318,7 +335,9 @@ export class RulesService {
     for (const file_id of filesOrder) {
       const name = this.resolveRuleName(props, file_id);
       const enabled = selected.has(file_id) || selected.has(name);
-      const source_text = opts?.includeText ? ((await readTextFileIfExists(path.join(this.filesDir(storage), file_id))) ?? '') : undefined;
+      const source_text = opts?.includeText
+        ? ((await readTextFileIfExists(path.join(this.filesDir(storage), file_id))) ?? '')
+        : undefined;
       out.push({
         instance_id: instanceId ?? 'default',
         file_id,
@@ -355,7 +374,12 @@ export class RulesService {
     try {
       if (opts?.selected === false) await client.disableDefaultRules();
     } catch (e) {
-      throw await this.restoreAndRethrowRuntimeDefaultRulesFailure(client, beforeText, beforeDisabled, e);
+      throw await this.restoreAndRethrowRuntimeDefaultRulesFailure(
+        client,
+        beforeText,
+        beforeDisabled,
+        e,
+      );
     }
     const after = await client.getRulesList();
     const afterText = after.defaultRules ?? '';
@@ -363,42 +387,70 @@ export class RulesService {
 
     const textMismatch = normalizeEol(afterText) !== normalizeEol(text);
     const expectedDisabled = typeof opts?.selected === 'boolean' ? !opts.selected : undefined;
-    const stateMismatch = typeof expectedDisabled === 'boolean' && afterDisabled !== expectedDisabled;
+    const stateMismatch =
+      typeof expectedDisabled === 'boolean' && afterDisabled !== expectedDisabled;
 
     if (opts?.verify && (textMismatch || stateMismatch)) {
-      const restoreFailure = await this.tryRestoreRuntimeDefaultRules(client, beforeText, beforeDisabled);
+      const restoreFailure = await this.tryRestoreRuntimeDefaultRules(
+        client,
+        beforeText,
+        beforeDisabled,
+      );
       throw new CliError({
         code: 'RULE_RUNTIME_VERIFY_FAILED',
         message: 'Runtime default rules verification failed',
         reason: [
-          textMismatch ? 'Whistle Web API returned default rules that differ from the requested content.' : undefined,
-          stateMismatch ? `Whistle Web API returned defaultRulesIsDisabled=${afterDisabled}, expected ${expectedDisabled}.` : undefined,
+          textMismatch
+            ? 'Whistle Web API returned default rules that differ from the requested content.'
+            : undefined,
+          stateMismatch
+            ? `Whistle Web API returned defaultRulesIsDisabled=${afterDisabled}, expected ${expectedDisabled}.`
+            : undefined,
           restoreFailure ? `Restore failed: ${restoreFailure}` : undefined,
-        ].filter(Boolean).join(' '),
-        suggested_fix: 'Re-run `whistle-cli rules default get` and inspect the active runtime rules before applying again.',
+        ]
+          .filter(Boolean)
+          .join(' '),
+        suggested_fix:
+          'Re-run `whistle-cli rules default get` and inspect the active runtime rules before applying again.',
       });
     }
 
     return {
       backend: 'whistle-web',
-      changed: normalizeEol(beforeText) !== normalizeEol(afterText) || beforeDisabled !== afterDisabled,
+      changed:
+        normalizeEol(beforeText) !== normalizeEol(afterText) || beforeDisabled !== afterDisabled,
       verified: Boolean(opts?.verify),
       before_sha256: sha256Hex(normalizeEol(beforeText)),
       after_sha256: sha256Hex(normalizeEol(afterText)),
     };
   }
 
-  async diagnoseHeaderConflicts(opts: { header: string; url: string; instanceId?: string }): Promise<HeaderConflictDiagnostic> {
+  async diagnoseHeaderConflicts(opts: {
+    header: string;
+    url: string;
+    instanceId?: string;
+  }): Promise<HeaderConflictDiagnostic> {
     const rules = await this.getRuntimeDefaultRules(opts.instanceId);
-    return diagnoseHeaderConflictsFromText(rules.source_text, { header: opts.header, url: opts.url });
+    return diagnoseHeaderConflictsFromText(rules.source_text, {
+      header: opts.header,
+      url: opts.url,
+    });
   }
 
-  private async restoreRuntimeDefaultRules(client: WhistleWebClient, text: string, disabled: boolean): Promise<void> {
+  private async restoreRuntimeDefaultRules(
+    client: WhistleWebClient,
+    text: string,
+    disabled: boolean,
+  ): Promise<void> {
     await client.applyDefaultRules(text, { selected: !disabled });
     if (disabled) await client.disableDefaultRules();
   }
 
-  private async tryRestoreRuntimeDefaultRules(client: WhistleWebClient, text: string, disabled: boolean): Promise<string | undefined> {
+  private async tryRestoreRuntimeDefaultRules(
+    client: WhistleWebClient,
+    text: string,
+    disabled: boolean,
+  ): Promise<string | undefined> {
     try {
       await this.restoreRuntimeDefaultRules(client, text, disabled);
       return undefined;
@@ -415,11 +467,20 @@ export class RulesService {
     failure: unknown,
   ): Promise<CliError> {
     const err = CliError.fromUnknown(failure);
-    const restoreFailure = await this.tryRestoreRuntimeDefaultRules(client, beforeText, beforeDisabled);
+    const restoreFailure = await this.tryRestoreRuntimeDefaultRules(
+      client,
+      beforeText,
+      beforeDisabled,
+    );
     return new CliError(
       {
         ...err.details,
-        reason: [err.details.reason, restoreFailure ? `Restore failed: ${restoreFailure}` : undefined].filter(Boolean).join(' '),
+        reason: [
+          err.details.reason,
+          restoreFailure ? `Restore failed: ${restoreFailure}` : undefined,
+        ]
+          .filter(Boolean)
+          .join(' '),
       },
       err,
     );
@@ -442,7 +503,9 @@ export class RulesService {
     const filesOrder = toStringArray(props.filesOrder);
     const selected = new Set(toStringArray(props.selectedList));
 
-    const matchId = filesOrder.find((id) => id === nameOrId) ?? filesOrder.find((id) => this.resolveRuleName(props, id) === nameOrId);
+    const matchId =
+      filesOrder.find((id) => id === nameOrId) ??
+      filesOrder.find((id) => this.resolveRuleName(props, id) === nameOrId);
     if (!matchId) {
       throw new CliError({
         code: 'UNSUPPORTED_OPERATION',
@@ -454,8 +517,16 @@ export class RulesService {
 
     const name = this.resolveRuleName(props, matchId);
     const enabled = selected.has(matchId) || selected.has(name);
-    const source_text = (await readTextFileIfExists(path.join(this.filesDir(storage), matchId))) ?? '';
-    return { instance_id: instanceId ?? 'default', file_id: matchId, name, enabled, scope: 'global', source_text };
+    const source_text =
+      (await readTextFileIfExists(path.join(this.filesDir(storage), matchId))) ?? '';
+    return {
+      instance_id: instanceId ?? 'default',
+      file_id: matchId,
+      name,
+      enabled,
+      scope: 'global',
+      source_text,
+    };
   }
 
   async planPatchFromText(
@@ -481,7 +552,11 @@ export class RulesService {
     };
   }
 
-  async applyPlannedPatch(plan: RulePatchPlan, patchText: string, instanceId?: string): Promise<{ changed: boolean; rule: RuleSet }> {
+  async applyPlannedPatch(
+    plan: RulePatchPlan,
+    patchText: string,
+    instanceId?: string,
+  ): Promise<{ changed: boolean; rule: RuleSet }> {
     const storage = this.resolveStorage(instanceId);
     const filePath = path.join(this.filesDir(storage), plan.file_id);
     const currentText = (await readTextFileIfExists(filePath)) ?? '';
@@ -491,17 +566,22 @@ export class RulesService {
         code: 'RULE_CONFLICT',
         message: 'Rule changed since preview was generated',
         reason: `expected base_sha256=${plan.base_sha256}, got ${currentHash}`,
-        suggested_fix: 'Re-run `whistle-cli rules patch` to regenerate the preview, then apply again.',
+        suggested_fix:
+          'Re-run `whistle-cli rules patch` to regenerate the preview, then apply again.',
       });
     }
 
-    const next = plan.mode === 'append' ? joinAppend(currentText, patchText) : normalizeEol(patchText);
+    const next =
+      plan.mode === 'append' ? joinAppend(currentText, patchText) : normalizeEol(patchText);
     await writeTextFile(filePath, next);
     const rule = await this.get(plan.file_id, instanceId);
     return { changed: normalizeEol(currentText) !== normalizeEol(next), rule };
   }
 
-  async verify(nameOrId: string, instanceId?: string): Promise<{ ok: boolean; reason?: string; rule?: RuleSet }> {
+  async verify(
+    nameOrId: string,
+    instanceId?: string,
+  ): Promise<{ ok: boolean; reason?: string; rule?: RuleSet }> {
     try {
       const rule = await this.get(nameOrId, instanceId);
       return { ok: true, rule };
@@ -511,13 +591,19 @@ export class RulesService {
     }
   }
 
-  async setEnabled(nameOrId: string, enabled: boolean, instanceId?: string): Promise<{ changed: boolean; rule: RuleSet }>{
+  async setEnabled(
+    nameOrId: string,
+    enabled: boolean,
+    instanceId?: string,
+  ): Promise<{ changed: boolean; rule: RuleSet }> {
     const storage = this.resolveStorage(instanceId);
     const props = await this.readProps(storage);
     const filesOrder = toStringArray(props.filesOrder);
     const selected = toStringArray(props.selectedList);
 
-    const matchId = filesOrder.find((id) => id === nameOrId) ?? filesOrder.find((id) => this.resolveRuleName(props, id) === nameOrId);
+    const matchId =
+      filesOrder.find((id) => id === nameOrId) ??
+      filesOrder.find((id) => this.resolveRuleName(props, id) === nameOrId);
     if (!matchId) {
       throw new CliError({
         code: 'UNSUPPORTED_OPERATION',
@@ -555,20 +641,28 @@ export class RulesService {
     return this.create(name, contents, instanceId);
   }
 
-  async exportToFile(nameOrId: string, outPath: string, instanceId?: string): Promise<{ outPath: string; bytes: number }> {
+  async exportToFile(
+    nameOrId: string,
+    outPath: string,
+    instanceId?: string,
+  ): Promise<{ outPath: string; bytes: number }> {
     const rule = await this.get(nameOrId, instanceId);
     const text = rule.source_text ?? '';
     await writeTextFile(outPath, text);
     return { outPath, bytes: Buffer.byteLength(text, 'utf8') };
   }
 
-  async removeRuleSet(nameOrId: string, instanceId?: string): Promise<{ removed: boolean; file_id?: string }> {
+  async removeRuleSet(
+    nameOrId: string,
+    instanceId?: string,
+  ): Promise<{ removed: boolean; file_id?: string }> {
     const storage = this.resolveStorage(instanceId);
     const props = await this.readProps(storage);
     const filesOrder = toStringArray(props.filesOrder);
 
     const matchId =
-      filesOrder.find((id) => id === nameOrId) ?? filesOrder.find((id) => this.resolveRuleName(props, id) === nameOrId);
+      filesOrder.find((id) => id === nameOrId) ??
+      filesOrder.find((id) => this.resolveRuleName(props, id) === nameOrId);
     if (!matchId) return { removed: false };
 
     props.filesOrder = filesOrder.filter((id) => id !== matchId);

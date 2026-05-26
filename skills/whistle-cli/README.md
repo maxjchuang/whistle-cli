@@ -42,4 +42,19 @@ If you see a major-version mismatch:
 Example:
 
 - Skill checkout: `0.x`
-- Installed CLI: `1.x`  -> reinstall `0.x` (or switch skill checkout)
+- Installed CLI: `1.x` -> reinstall `0.x` (or switch skill checkout)
+
+## Capture workflow
+
+For packet capture tasks, the skill expects `whistle-cli` capture commands that can wait for newly triggered requests and emit redacted summaries. A typical chatbot skill-list capture uses:
+
+```bash
+whistle-cli --format json captures assert-request \
+  --backend whistle-web \
+  --host app.example.com \
+  --path /space/api/workspace/chatbot/ \
+  --keyword /skills \
+  --timeout 60s \
+  --poll-interval 2s \
+  --fields capture_id,method,status_code,path,x_tt_logid,request_id,env,referer,matched_rules_summary
+```

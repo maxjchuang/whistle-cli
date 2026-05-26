@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CapturesService, classifyHeaderRecord, filterNewHeaderAssertionEvents, summarizeHeaderAssertion } from '../../src/domain/captures-service';
+import {
+  CapturesService,
+  classifyHeaderRecord,
+  filterNewHeaderAssertionEvents,
+  summarizeHeaderAssertion,
+} from '../../src/domain/captures-service';
 import type { CaptureRecord } from '../../src/domain/captures-model';
 
 function rec(headers?: Record<string, string>): CaptureRecord {
@@ -17,17 +22,26 @@ function rec(headers?: Record<string, string>): CaptureRecord {
 
 describe('header assertion classification', () => {
   it('classifies individual records as ok, overridden, and miss', () => {
-    expect(classifyHeaderRecord(rec({ 'x-env': 'staging' }), 'x-env', 'staging').classification).toBe('OK');
-    expect(classifyHeaderRecord(rec({ 'x-env': 'other' }), 'x-env', 'staging').classification).toBe('OVERRIDDEN');
+    expect(
+      classifyHeaderRecord(rec({ 'x-env': 'staging' }), 'x-env', 'staging').classification,
+    ).toBe('OK');
+    expect(classifyHeaderRecord(rec({ 'x-env': 'other' }), 'x-env', 'staging').classification).toBe(
+      'OVERRIDDEN',
+    );
     expect(classifyHeaderRecord(rec({}), 'x-env', 'staging').classification).toBe('MISS');
   });
 
   it('classifies request headers case-insensitively', () => {
-    expect(classifyHeaderRecord(rec({ 'X-Env': 'staging' }), 'x-env', 'staging').classification).toBe('OK');
+    expect(
+      classifyHeaderRecord(rec({ 'X-Env': 'staging' }), 'x-env', 'staging').classification,
+    ).toBe('OK');
   });
 
   it('summarizes ok traffic', () => {
-    const summary = summarizeHeaderAssertion([rec({ 'x-env': 'staging' })], { header: 'x-env', equals: 'staging' });
+    const summary = summarizeHeaderAssertion([rec({ 'x-env': 'staging' })], {
+      header: 'x-env',
+      equals: 'staging',
+    });
 
     expect(summary.classification).toBe('OK');
     expect(summary.ok).toBe(1);
@@ -35,11 +49,14 @@ describe('header assertion classification', () => {
     expect(summary.miss).toBe(0);
   });
 
-  it('summarizes overridden traffic when any header value differs', () => {
-    const summary = summarizeHeaderAssertion([rec({ 'x-env': 'staging' }), rec({ 'x-env': 'prod' }), rec({})], {
-      header: 'x-env',
-      equals: 'staging',
-    });
+  it('summarizes overridden traffic when a header value differs', () => {
+    const summary = summarizeHeaderAssertion(
+      [rec({ 'x-env': 'staging' }), rec({ 'x-env': 'prod' }), rec({})],
+      {
+        header: 'x-env',
+        equals: 'staging',
+      },
+    );
 
     expect(summary.classification).toBe('OVERRIDDEN');
     expect(summary.ok).toBe(1);
@@ -48,7 +65,10 @@ describe('header assertion classification', () => {
   });
 
   it('summarizes missing header traffic as miss when no value was overridden', () => {
-    const summary = summarizeHeaderAssertion([rec({}), rec({ 'x-other': 'staging' })], { header: 'x-env', equals: 'staging' });
+    const summary = summarizeHeaderAssertion([rec({}), rec({ 'x-other': 'staging' })], {
+      header: 'x-env',
+      equals: 'staging',
+    });
 
     expect(summary.classification).toBe('MISS');
     expect(summary.ok).toBe(0);
@@ -65,7 +85,7 @@ describe('header assertion classification', () => {
 
   it('keeps known backend on no traffic assertion summaries', async () => {
     const service = new CapturesService();
-    (service as any).find = async () => ({ filters: {}, count: 0, items: [] });
+    service.find = async () => ({ filters: {}, count: 0, items: [] });
 
     const summary = await service.assertHeader(
       { instance_id: 'default', backend: 'runtime', filters: { host: 'example.com' }, limit: 200 },
