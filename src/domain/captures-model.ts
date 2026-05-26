@@ -1,4 +1,11 @@
-export type CaptureProtocol = 'http' | 'https' | 'http2' | 'websocket' | 'tcp' | 'tunnel' | 'unknown';
+export type CaptureProtocol =
+  | 'http'
+  | 'https'
+  | 'http2'
+  | 'websocket'
+  | 'tcp'
+  | 'tunnel'
+  | 'unknown';
 export type CaptureBackend = 'runtime' | 'whistle-web';
 
 export interface CaptureQueryFilters {
@@ -14,6 +21,42 @@ export interface CaptureQuery {
   filters: CaptureQueryFilters;
   limit: number;
   backend?: 'auto' | CaptureBackend;
+}
+
+export type CaptureAssertClassification = 'MATCHED' | 'TIMEOUT';
+
+export interface CaptureSummary {
+  capture_id: string;
+  method?: string;
+  status_code?: number;
+  url?: string;
+  host?: string;
+  path?: string;
+  x_tt_logid?: string;
+  request_id?: string;
+  env?: string;
+  x_tt_env?: string;
+  referer?: string;
+  matched_rules_summary?: string[];
+  redacted_headers?: string[];
+}
+
+export interface CaptureSummaryOptions {
+  fields?: string[];
+}
+
+export interface CaptureAssertRequestOptions extends CaptureSummaryOptions {
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+}
+
+export interface CaptureAssertRequestResult {
+  matched: boolean;
+  classification: CaptureAssertClassification;
+  observed: number;
+  filters: CaptureQueryFilters;
+  match?: CaptureSummary;
+  next_actions?: string[];
 }
 
 export interface CaptureTiming {

@@ -27,6 +27,9 @@ describe('skill install smoke', () => {
       expect(skillMd).toContain('Resource-First');
       expect(skillMd).toContain('rules default apply');
       expect(skillMd).toContain('captures assert-header');
+      expect(skillMd).toContain('captures assert-request');
+      expect(skillMd).toContain('Capture Workflow');
+      expect(skillMd).toContain('Chatbot skill list');
       expect(skillMd).toContain('rules diagnose-conflicts');
       expect(skillMd).toContain('Do not edit Whistle storage files for live rule changes');
 

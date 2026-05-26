@@ -15,15 +15,19 @@ export interface FakeCaptureBackendOptions {
   failGetData?: boolean;
   disableCaptureRuntimeRoutes?: boolean;
   nativeCaptureData?: Record<string, any>;
+  nativeCaptureSequence?: Array<Record<string, any>>;
 }
 
-export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions): Promise<FakeCaptureBackend> {
+export async function startFakeCaptureBackend(
+  opts?: FakeCaptureBackendOptions,
+): Promise<FakeCaptureBackend> {
   let defaultRules = 'example.com reqHeaders://x-old=1\n';
   let defaultRulesIsDisabled = Boolean(opts?.initialDefaultRulesIsDisabled);
   let mismatchWritesRemaining = opts?.mismatchDefaultRulesOnAdd ? 1 : 0;
   let failNextRulesAdd = false;
   let stateToggleFailuresRemaining = 0;
   let stateToggleFailureTriggered = false;
+  let getDataCalls = 0;
 
   async function readBody(req: http.IncomingMessage): Promise<string> {
     return await new Promise((resolve, reject) => {
@@ -155,13 +159,22 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
             headers: { host: 'example.com', 'x-env': 'staging' },
           },
           res: { statusCode: 200 },
-          rules: { rule: { matcher: 'example.com', raw: 'example.com reqHeaders://x-env=staging' } },
+          rules: {
+            rule: { matcher: 'example.com', raw: 'example.com reqHeaders://x-env=staging' },
+          },
           rulesHeaders: {},
         },
       };
       const dumpCount = Number(u.searchParams.get('dumpCount') ?? '');
-      const entries = Object.entries(opts?.nativeCaptureData ?? defaultData);
-      const data = Object.fromEntries(Number.isFinite(dumpCount) && dumpCount > 0 ? entries.slice(0, dumpCount) : entries);
+      const sequence = opts?.nativeCaptureSequence;
+      const sequenceIndex = sequence ? Math.min(getDataCalls, sequence.length - 1) : -1;
+      getDataCalls++;
+      const entries = Object.entries(
+        sequence ? sequence[sequenceIndex] : (opts?.nativeCaptureData ?? defaultData),
+      );
+      const data = Object.fromEntries(
+        Number.isFinite(dumpCount) && dumpCount > 0 ? entries.slice(0, dumpCount) : entries,
+      );
       res.statusCode = 200;
       res.end(JSON.stringify({ ec: 0, data: { data, newIds: Object.keys(data) } }));
       return;
@@ -217,8 +230,24 @@ export async function startFakeCaptureBackend(opts?: FakeCaptureBackendOptions):
       res.statusCode = 200;
       res.setHeader('content-type', 'application/x-ndjson; charset=utf-8');
       const items = [
-        { id: 'cap_tail_1', protocol: 'http', method: 'GET', url: 'http://example.com/a', host: 'example.com', path: '/a', statusCode: 200 },
-        { id: 'cap_tail_2', protocol: 'https', method: 'POST', url: 'https://example.com/b', host: 'example.com', path: '/b', statusCode: 500 },
+        {
+          id: 'cap_tail_1',
+          protocol: 'http',
+          method: 'GET',
+          url: 'http://example.com/a',
+          host: 'example.com',
+          path: '/a',
+          statusCode: 200,
+        },
+        {
+          id: 'cap_tail_2',
+          protocol: 'https',
+          method: 'POST',
+          url: 'https://example.com/b',
+          host: 'example.com',
+          path: '/b',
+          statusCode: 500,
+        },
       ];
       for (const it of items) {
         res.write(`${JSON.stringify(it)}\n`);
