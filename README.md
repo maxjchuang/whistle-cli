@@ -51,16 +51,15 @@ Install the repository-distributed skill into the default skills directory:
 ./scripts/install-skill.sh
 ```
 
-
 ## Command Structure
 
 whistle-cli provides three layers of commands:
 
-| Layer | Purpose | Example |
-|-------|---------|---------|
-| **raw** | Escape hatch, passthrough to `w2` | `whistle-cli raw w2 status` |
-| **resource** | Stable resource operations, preferred for agents | `whistle-cli rules patch --preview` |
-| **shortcut** | High-frequency intent-driven commands | `whistle-cli rule set-header --match ...` |
+| Layer        | Purpose                                          | Example                                   |
+| ------------ | ------------------------------------------------ | ----------------------------------------- |
+| **raw**      | Escape hatch, passthrough to `w2`                | `whistle-cli raw w2 status`               |
+| **resource** | Stable resource operations, preferred for agents | `whistle-cli rules patch --preview`       |
+| **shortcut** | High-frequency intent-driven commands            | `whistle-cli rule set-header --match ...` |
 
 ### Resource Commands (v1 target)
 
@@ -70,6 +69,7 @@ whistle-cli provides three layers of commands:
 - `captures` — find / get / tail / diff / export
 - `composer` — replay / compose
 - `frames` — list / send
+- `runtime` — serve the optional `__whistle_cli__` backend API
 - `certs` — status / install / verify / guide
 - `proxy` — status / set / off / verify
 - `plugins` — list / install / uninstall / enable / disable / inspect
@@ -85,11 +85,11 @@ whistle-cli provides three layers of commands:
 
 ### Global Flags
 
-| Flag | Description |
-|------|-------------|
-| `--format <json\|pretty\|table\|ndjson>` | Output format, default `json` |
-| `--instance <id>` | Target instance, defaults to current |
-| `--non-interactive` | Fail instead of waiting for user action |
+| Flag                                     | Description                             |
+| ---------------------------------------- | --------------------------------------- |
+| `--format <json\|pretty\|table\|ndjson>` | Output format, default `json`           |
+| `--instance <id>`                        | Target instance, defaults to current    |
+| `--non-interactive`                      | Fail instead of waiting for user action |
 
 `--preview`, `--apply`, `--verify`, and `--rollback` are **command-level flags** on mutating resource commands (not global flags).
 
@@ -107,7 +107,7 @@ All output is a structured JSON envelope designed for machine parsing:
 ```json
 {
   "status": "ok | warning | error | blocked",
-  "resource": "raw | instance | rules | values | captures | composer | frames | certs | proxy | plugins | doctor",
+  "resource": "raw | instance | rules | values | captures | composer | frames | runtime | certs | proxy | plugins | doctor",
   "action": "w2 status",
   "data": {},
   "error": {
@@ -130,22 +130,22 @@ All output is a structured JSON envelope designed for machine parsing:
 
 ### Error Codes
 
-| Code | Meaning |
-|------|---------|
-| `INSTANCE_NOT_RUNNING` | Whistle instance is not running |
-| `INSTANCE_PORT_CONFLICT` | Port already in use |
-| `CERT_NOT_INSTALLED` | CA certificate not installed |
-| `CERT_NOT_TRUSTED` | CA certificate not trusted by system |
-| `PROXY_NOT_ACTIVE` | System proxy not pointing to Whistle |
-| `RULE_CONFLICT` | Conflicting rules detected |
-| `RULE_VERIFY_FAILED` | Rule verification failed |
-| `NO_CAPTURE_MATCH` | No captured traffic matched the query |
-| `CAPTURE_BACKEND_UNAVAILABLE` | Capture backend not accessible |
-| `PLUGIN_NOT_INSTALLED` | Plugin not installed |
-| `PLUGIN_CAPABILITY_UNAVAILABLE` | Plugin capability not available |
-| `PERMISSION_REQUIRED` | Insufficient permissions |
-| `USER_ACTION_REQUIRED` | Manual user action needed |
-| `UNSUPPORTED_OPERATION` | Operation not supported |
+| Code                            | Meaning                               |
+| ------------------------------- | ------------------------------------- |
+| `INSTANCE_NOT_RUNNING`          | Whistle instance is not running       |
+| `INSTANCE_PORT_CONFLICT`        | Port already in use                   |
+| `CERT_NOT_INSTALLED`            | CA certificate not installed          |
+| `CERT_NOT_TRUSTED`              | CA certificate not trusted by system  |
+| `PROXY_NOT_ACTIVE`              | System proxy not pointing to Whistle  |
+| `RULE_CONFLICT`                 | Conflicting rules detected            |
+| `RULE_VERIFY_FAILED`            | Rule verification failed              |
+| `NO_CAPTURE_MATCH`              | No captured traffic matched the query |
+| `CAPTURE_BACKEND_UNAVAILABLE`   | Capture backend not accessible        |
+| `PLUGIN_NOT_INSTALLED`          | Plugin not installed                  |
+| `PLUGIN_CAPABILITY_UNAVAILABLE` | Plugin capability not available       |
+| `PERMISSION_REQUIRED`           | Insufficient permissions              |
+| `USER_ACTION_REQUIRED`          | Manual user action needed             |
+| `UNSUPPORTED_OPERATION`         | Operation not supported               |
 
 ## Agent Integration
 
@@ -170,6 +170,27 @@ All output is a structured JSON envelope designed for machine parsing:
    -> Read error.suggested_fix and inform user
    -> Read next_actions for next step
 ```
+
+### Runtime Backend
+
+`whistle-cli` includes an optional local runtime backend that serves the `__whistle_cli__` API consumed by `--backend runtime` commands.
+
+```bash
+# Start a backend in front of a running Whistle Web API
+whistle-cli --format json runtime serve \
+  --target-url http://127.0.0.1:8899 \
+  --host 127.0.0.1 \
+  --port 8898
+
+# In another shell, route RuntimeClient calls to it
+export WHISTLE_CLI_RUNTIME_URL=http://127.0.0.1:8898
+
+whistle-cli --format json captures find --backend runtime --host example.com
+whistle-cli --format ndjson captures tail --backend runtime --host example.com --limit 5
+whistle-cli --format json composer compose --method GET --url https://example.com --apply
+```
+
+The runtime backend currently adapts capture data from Whistle's Web API and executes compose/replay with local HTTP requests. Frame routes return `UNSUPPORTED_OPERATION` until frame-level backend support is implemented.
 
 ### Error Handling Pattern
 
@@ -216,25 +237,27 @@ npm run lint
 
 ## Implementation Status
 
-| Command | Status |
-|---------|--------|
+| Command         | Status    |
+| --------------- | --------- |
 | `raw w2 [args]` | Available |
-| `instance/*` | Available |
-| `rules/*` | Available |
-| `values/*` | Available |
-| `captures/*` | Available |
-| `composer/*` | Available |
-| `frames/*` | Available |
-| `certs/*` | Available |
-| `proxy/*` | Available |
-| `plugins/*` | Available |
-| `doctor/*` | Available |
-| `shortcuts/*` | Available |
+| `instance/*`    | Available |
+| `rules/*`       | Available |
+| `values/*`      | Available |
+| `captures/*`    | Available |
+| `composer/*`    | Available |
+| `frames/*`      | Available |
+| `runtime serve` | Available |
+| `certs/*`       | Available |
+| `proxy/*`       | Available |
+| `plugins/*`     | Available |
+| `doctor/*`      | Available |
+| `shortcuts/*`   | Available |
 
 ## Current Limitations (v1)
 
 - `captures diff` exists in command surface but currently returns `UNSUPPORTED_OPERATION`.
 - `captures tail` requires `--format ndjson`.
+- Runtime backend frame routes return `UNSUPPORTED_OPERATION`; capture and composer runtime routes are implemented.
 - Certificate trust and some proxy setup steps may return `blocked` or `USER_ACTION_REQUIRED` and require manual OS actions.
 
 ## License

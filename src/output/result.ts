@@ -13,6 +13,7 @@ export type ResourceName =
   | 'proxy'
   | 'plugins'
   | 'doctor'
+  | 'runtime'
   | 'raw';
 
 export interface NextAction {
@@ -54,7 +55,9 @@ export function okEnvelope<TData>(
   resource: ResourceName,
   action: string,
   data: TData,
-  opts?: Partial<Pick<Envelope<TData>, 'event' | 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>>,
+  opts?: Partial<
+    Pick<Envelope<TData>, 'event' | 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>
+  >,
 ): Envelope<TData> {
   return {
     status: 'ok',
@@ -69,7 +72,9 @@ export function blockedEnvelope<TData>(
   resource: ResourceName,
   action: string,
   data: TData,
-  opts?: Partial<Pick<Envelope<TData>, 'event' | 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>>,
+  opts?: Partial<
+    Pick<Envelope<TData>, 'event' | 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>
+  >,
 ): Envelope<TData> {
   return {
     status: 'blocked',
@@ -86,7 +91,9 @@ export function warningEnvelope<TData>(
   action: string,
   data: TData,
   warnings: string[],
-  opts?: Partial<Pick<Envelope<TData>, 'event' | 'instance' | 'effective' | 'next_actions' | 'meta'>>,
+  opts?: Partial<
+    Pick<Envelope<TData>, 'event' | 'instance' | 'effective' | 'next_actions' | 'meta'>
+  >,
 ): Envelope<TData> {
   return {
     status: 'warning',
@@ -102,7 +109,9 @@ export function errorEnvelope(
   resource: ResourceName,
   action: string,
   error: { details: ErrorDetails } | ErrorDetails,
-  opts?: Partial<Pick<Envelope, 'event' | 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>>,
+  opts?: Partial<
+    Pick<Envelope, 'event' | 'instance' | 'effective' | 'warnings' | 'next_actions' | 'meta'>
+  >,
 ): Envelope {
   const details = 'details' in error ? error.details : error;
   return {
