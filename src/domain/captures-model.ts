@@ -59,6 +59,13 @@ export interface CaptureAssertRequestResult {
   next_actions?: string[];
 }
 
+export interface CaptureHeaderResult {
+  capture_id: string;
+  backend: CaptureBackend;
+  header: string;
+  value: string;
+}
+
 export interface CaptureTiming {
   start_at?: string;
   end_at?: string;

@@ -192,6 +192,43 @@ whistle-cli --format json composer compose --method GET --url https://example.co
 
 The runtime backend currently adapts capture data from Whistle's Web API and executes compose/replay with local HTTP requests. Frame routes return `UNSUPPORTED_OPERATION` until frame-level backend support is implemented.
 
+### Whistle Web Capture Retrieval
+
+For browser-driven automation, prefer Whistle Web capture retrieval when the capture was detected with `--backend whistle-web`:
+
+```bash
+# Wait for a newly triggered request and keep only a redacted summary in the result
+whistle-cli --format json captures assert-request \
+  --backend whistle-web \
+  --host app.example.com \
+  --path /api/ \
+  --timeout 90s \
+  --poll-interval 2s \
+  --fields capture_id,method,status_code,path,referer
+
+# Retrieve the exact capture while it is still in the Whistle Web data window
+whistle-cli --format json captures get \
+  --backend whistle-web \
+  --id <capture_id>
+
+# Extract one request header from the exact capture
+whistle-cli --format json captures get-header \
+  --backend whistle-web \
+  --id <capture_id> \
+  --header cookie
+
+# Export filtered Whistle Web captures as JSON
+whistle-cli --format json captures export \
+  --backend whistle-web \
+  --host app.example.com \
+  --path /api/ \
+  --export-format json
+```
+
+`assert-request` remains redacted by default for safe agent-facing reporting. Explicit retrieval commands such as `get`, `export`, and `get-header` return captured request header values requested by the user, so avoid logging their output when headers contain credentials.
+
+If direct Whistle Web API fallback is unavoidable, use `dumpCount` to widen the returned session window, for example: `/cgi-bin/get-data?startTime=0&dumpCount=1000`.
+
 ### Error Handling Pattern
 
 ```python
