@@ -180,6 +180,322 @@ describe('US3 captures (integration)', () => {
     }
   });
 
+  it('captures get --backend whistle-web returns an exact capture by id', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {
+        target_capture: {
+          url: 'https://app.example.com/api/widgets?debug=1',
+          req: {
+            method: 'POST',
+            headers: {
+              host: 'app.example.com',
+              cookie: 'session=abc',
+              authorization: 'Bearer token',
+              'x-request-id': 'req-123',
+            },
+          },
+          res: { statusCode: 202 },
+        },
+      },
+    });
+    try {
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'get',
+          '--backend',
+          'whistle-web',
+          '--id',
+          'target_capture',
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).toBe(0);
+      const envelope = JSON.parse(res.stdout);
+      expect(envelope.data).toMatchObject({
+        capture_id: 'target_capture',
+        backend: 'whistle-web',
+        method: 'POST',
+        status_code: 202,
+        path: '/api/widgets?debug=1',
+      });
+      expect(envelope.data.request_headers.cookie).toBe('session=abc');
+      expect(envelope.data.request_headers.authorization).toBe('Bearer token');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures get --backend whistle-web reports not found when the id is absent', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {},
+    });
+    try {
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'get',
+          '--backend',
+          'whistle-web',
+          '--id',
+          'missing',
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).not.toBe(0);
+      expect(res.stderr).toContain('"code":"NO_CAPTURE_MATCH"');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures assert-request id can be retrieved with Whistle Web get', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const baseline = {
+      old_api: {
+        id: 'old_api',
+        url: 'https://app.example.com/api/widgets',
+        req: { method: 'GET', headers: { host: 'app.example.com' } },
+        res: { statusCode: 200 },
+      },
+    };
+    const next = {
+      ...baseline,
+      new_api: {
+        id: 'new_api',
+        url: 'https://app.example.com/api/widgets',
+        req: {
+          method: 'GET',
+          headers: { host: 'app.example.com', cookie: 'session=new' },
+        },
+        res: { statusCode: 200 },
+      },
+    };
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureSequence: [baseline, next, next],
+    });
+    try {
+      const env = {
+        WHISTLE_CLI_STATE_DIR: stateDir,
+        WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+      };
+      const asserted = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'assert-request',
+          '--backend',
+          'whistle-web',
+          '--host',
+          'app.example.com',
+          '--path',
+          '/api/widgets',
+          '--timeout',
+          '1s',
+          '--poll-interval',
+          '50ms',
+          '--format',
+          'json',
+        ],
+        { env },
+      );
+      expect(asserted.exitCode).toBe(0);
+      const captureId = JSON.parse(asserted.stdout).data.match.capture_id;
+      expect(captureId).toBe('new_api');
+
+      const got = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'get',
+          '--backend',
+          'whistle-web',
+          '--id',
+          captureId,
+          '--format',
+          'json',
+        ],
+        { env },
+      );
+      expect(got.exitCode).toBe(0);
+      expect(JSON.parse(got.stdout).data.request_headers.cookie).toBe('session=new');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures export --backend whistle-web returns filtered JSON captures and rejects HAR', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {
+        wanted: {
+          id: 'wanted',
+          url: 'https://app.example.com/api/widgets',
+          req: { method: 'GET', headers: { host: 'app.example.com', cookie: 'session=abc' } },
+          res: { statusCode: 200 },
+        },
+        other: {
+          id: 'other',
+          url: 'https://app.example.com/telemetry',
+          req: { method: 'POST', headers: { host: 'app.example.com' } },
+          res: { statusCode: 204 },
+        },
+      },
+    });
+    try {
+      const env = {
+        WHISTLE_CLI_STATE_DIR: stateDir,
+        WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+      };
+      const json = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'export',
+          '--backend',
+          'whistle-web',
+          '--host',
+          'app.example.com',
+          '--path',
+          '/api/',
+          '--export-format',
+          'json',
+          '--format',
+          'json',
+        ],
+        { env },
+      );
+      expect(json.exitCode).toBe(0);
+      const envelope = JSON.parse(json.stdout);
+      expect(envelope.data).toMatchObject({ backend: 'whistle-web', format: 'json', count: 1 });
+      expect(envelope.data.items[0].capture_id).toBe('wanted');
+      expect(envelope.data.items[0].request_headers.cookie).toBe('session=abc');
+
+      const har = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'export',
+          '--backend',
+          'whistle-web',
+          '--export-format',
+          'har',
+          '--format',
+          'json',
+        ],
+        { env },
+      );
+      expect(har.exitCode).not.toBe(0);
+      expect(har.stderr).toContain('"code":"UNSUPPORTED_OPERATION"');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures get-header extracts one Whistle Web header case-insensitively', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {
+        header_cap: {
+          id: 'header_cap',
+          url: 'https://app.example.com/api/widgets',
+          req: {
+            method: 'GET',
+            headers: {
+              host: 'app.example.com',
+              cookie: 'session=abc',
+              authorization: 'Bearer token',
+            },
+          },
+          res: { statusCode: 200 },
+        },
+      },
+    });
+    try {
+      const env = {
+        WHISTLE_CLI_STATE_DIR: stateDir,
+        WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+      };
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'get-header',
+          '--backend',
+          'whistle-web',
+          '--id',
+          'header_cap',
+          '--header',
+          'Cookie',
+          '--format',
+          'json',
+        ],
+        { env },
+      );
+      expect(res.exitCode).toBe(0);
+      const envelope = JSON.parse(res.stdout);
+      expect(envelope.data).toEqual({
+        capture_id: 'header_cap',
+        backend: 'whistle-web',
+        header: 'Cookie',
+        value: 'session=abc',
+      });
+      expect(JSON.stringify(envelope)).not.toContain('Bearer token');
+
+      const missing = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'get-header',
+          '--backend',
+          'whistle-web',
+          '--id',
+          'header_cap',
+          '--header',
+          'x-missing',
+          '--format',
+          'json',
+        ],
+        { env },
+      );
+      expect(missing.exitCode).not.toBe(0);
+      expect(missing.stderr).toContain('"code":"NO_CAPTURE_MATCH"');
+    } finally {
+      await backend.close();
+    }
+  });
+
   it('captures assert-request returns warning timeout with next actions', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend({
@@ -459,15 +775,11 @@ describe('US3 captures (integration)', () => {
     }
   });
 
-  it('runtime-only capture commands reject non-runtime backend values', async () => {
+  it('runtime-only capture tail rejects non-runtime backend values', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend();
     try {
-      for (const args of [
-        ['captures', 'get', '--id', 'cap_1', '--backend', 'whistle-web', '--format', 'json'],
-        ['captures', 'export', '--backend', 'whistle-web', '--format', 'json'],
-        ['captures', 'tail', '--backend', 'whistle-web', '--format', 'ndjson'],
-      ]) {
+      for (const args of [['captures', 'tail', '--backend', 'whistle-web', '--format', 'ndjson']]) {
         const res = await runCli(['--instance', 'dummy', ...args], {
           env: {
             WHISTLE_CLI_STATE_DIR: stateDir,

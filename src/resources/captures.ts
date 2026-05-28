@@ -63,6 +63,15 @@ function assertRuntimeOnlyBackend(backend: unknown, action: string): void {
   });
 }
 
+function assertCaptureBackend(backend: unknown): 'whistle-web' | 'runtime' {
+  if (backend === 'whistle-web' || backend === 'runtime') return backend;
+  throw new CliError({
+    code: 'UNSUPPORTED_OPERATION',
+    message: `Unsupported capture backend: ${String(backend)}`,
+    suggested_fix: 'Use one of: whistle-web, runtime.',
+  });
+}
+
 type CaptureFindOptions = {
   host?: string;
   path?: string;
@@ -77,6 +86,11 @@ type CaptureFindOptions = {
 type CaptureGetOptions = {
   id: string;
   backend?: string;
+  limit?: string | number;
+};
+
+type CaptureGetHeaderOptions = CaptureGetOptions & {
+  header: string;
 };
 
 type CaptureAssertRequestCommandOptions = CaptureFindOptions & {
@@ -163,18 +177,55 @@ export function registerCapturesResource(program: Command): void {
     .command('get')
     .description('Get a single capture record')
     .requiredOption('--id <id>', 'Capture id')
-    .option('--backend <backend>', 'Capture backend: runtime', 'runtime')
+    .option('--backend <backend>', 'Capture backend: whistle-web|runtime', 'runtime')
+    .option('--limit <n>', 'Recent Whistle Web records to inspect', '200')
     .action(async (cmdOpts: CaptureGetOptions) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
       const resolved = await resolveInstanceId(opts.instance);
       const action = 'get';
       try {
-        assertRuntimeOnlyBackend(cmdOpts.backend, action);
-        const item = await service.get(resolved.id, cmdOpts.id);
+        const backend = assertCaptureBackend(cmdOpts.backend ?? 'runtime');
+        const item = await service.get(resolved.id, cmdOpts.id, {
+          backend,
+          limit: Number(cmdOpts.limit ?? 200),
+        });
         process.stdout.write(
           renderEnvelope(
             okEnvelope('captures', action, item, { instance: resolved, effective: true }),
+            format,
+          ),
+        );
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved }), format),
+        );
+        process.exitCode = 1;
+      }
+    });
+
+  captures
+    .command('get-header')
+    .description('Get one request header from a capture')
+    .requiredOption('--id <id>', 'Capture id')
+    .requiredOption('--header <name>', 'Request header name')
+    .option('--backend <backend>', 'Capture backend: whistle-web|runtime', 'runtime')
+    .option('--limit <n>', 'Recent Whistle Web records to inspect', '200')
+    .action(async (cmdOpts: CaptureGetHeaderOptions) => {
+      const opts = program.opts();
+      const format = (opts.format ?? 'json') as OutputFormat;
+      const resolved = await resolveInstanceId(opts.instance);
+      const action = 'get-header';
+      try {
+        const backend = assertCaptureBackend(cmdOpts.backend ?? 'runtime');
+        const data = await service.getHeader(resolved.id, cmdOpts.id, String(cmdOpts.header), {
+          backend,
+          limit: Number(cmdOpts.limit ?? 200),
+        });
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope('captures', action, data, { instance: resolved, effective: true }),
             format,
           ),
         );
@@ -513,7 +564,7 @@ export function registerCapturesResource(program: Command): void {
     .option('--keyword <keyword>', 'Search keyword')
     .option('--limit <n>', 'Max items', '200')
     .option('--export-format <fmt>', 'Export format: har|json', 'json')
-    .option('--backend <backend>', 'Capture backend: runtime', 'runtime')
+    .option('--backend <backend>', 'Capture backend: whistle-web|runtime', 'runtime')
     .action(async (cmdOpts: CaptureExportOptions) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
@@ -530,8 +581,7 @@ export function registerCapturesResource(program: Command): void {
         };
         const limit = Number(cmdOpts.limit ?? 200);
         const export_format = cmdOpts.exportFormat === 'har' ? 'har' : 'json';
-        assertRuntimeOnlyBackend(cmdOpts.backend, action);
-        const backend = 'runtime' as const;
+        const backend = assertCaptureBackend(cmdOpts.backend ?? 'runtime');
         const out = await service.export({
           instance_id: resolved.id,
           filters,

@@ -7,6 +7,7 @@ import type {
   CaptureAssertRequestOptions,
   CaptureAssertRequestResult,
   CaptureBackend,
+  CaptureHeaderResult,
   CaptureQuery,
   CaptureRecord,
   CaptureSummary,
@@ -303,6 +304,18 @@ function knownCaptureBackend(backend: CaptureQuery['backend']): CaptureBackend |
   return backend === 'runtime' || backend === 'whistle-web' ? backend : undefined;
 }
 
+function sourceCaptureIdMatches(raw: unknown, fallbackId: string, captureId: string): boolean {
+  const r = asRecord(raw);
+  const candidates = [
+    fallbackId,
+    prop(r, 'id'),
+    prop(r, 'capture_id'),
+    prop(r, 'reqId'),
+    prop(r, 'sessionId'),
+  ];
+  return candidates.some((candidate) => String(candidate ?? '') === captureId);
+}
+
 export function summarizeHeaderAssertion(
   records: CaptureRecord[],
   opts: HeaderAssertionOptions,
@@ -437,12 +450,20 @@ export class CapturesService {
     query: CaptureQuery,
     limit: number,
   ): Promise<ReturnType<CapturesService['buildFindResult']>> {
+    const items = await this.readWhistleWebCaptures(query, limit);
+    return this.buildFindResult(query, items);
+  }
+
+  private async readWhistleWebCaptures(
+    query: CaptureQuery,
+    limit: number,
+  ): Promise<CaptureRecord[]> {
     const client = await this.whistleWebClientForInstance(query.instance_id);
     const dumpCount = Math.min(Math.max(limit * 5, 100), 1000);
     const res = await client.getData({ startTime: 0, dumpCount });
     const rawItems = Object.entries(res.data?.data ?? {});
     const filters = query.filters;
-    const items = rawItems
+    return rawItems
       .map(([id, r]) => normalizeWhistleWebCapture(r, query.instance_id, id))
       .filter((item) => {
         if (filters.host && item.host !== filters.host) return false;
@@ -457,7 +478,28 @@ export class CapturesService {
         return true;
       })
       .slice(0, limit);
-    return this.buildFindResult(query, items);
+  }
+
+  private async getViaWhistleWeb(
+    instanceId: string,
+    captureId: string,
+    opts?: { limit?: number },
+  ): Promise<CaptureRecord> {
+    const client = await this.whistleWebClientForInstance(instanceId);
+    const limit = normalizeLimit(opts?.limit ?? 200);
+    const dumpCount = Math.min(Math.max(limit * 5, 100), 1000);
+    const res = await client.getData({ startTime: 0, dumpCount });
+    for (const [id, raw] of Object.entries(res.data?.data ?? {})) {
+      if (!sourceCaptureIdMatches(raw, id, captureId)) continue;
+      return normalizeWhistleWebCapture(raw, instanceId, id);
+    }
+    throw new CliError({
+      code: 'NO_CAPTURE_MATCH',
+      message: 'Whistle Web capture was not found',
+      reason: `capture_id=${captureId}`,
+      suggested_fix:
+        'The Whistle Web data window may have rotated. Re-run captures assert-request or broaden the export filters immediately after the target request.',
+    });
   }
 
   async find(query: CaptureQuery): Promise<{
@@ -585,7 +627,15 @@ export class CapturesService {
     } while (Date.now() < deadline);
   }
 
-  async get(instanceId: string, captureId: string): Promise<CaptureRecord> {
+  async get(
+    instanceId: string,
+    captureId: string,
+    opts?: { backend?: CaptureBackend; limit?: number },
+  ): Promise<CaptureRecord> {
+    const backend = opts?.backend ?? 'runtime';
+    if (backend === 'whistle-web') {
+      return await this.getViaWhistleWeb(instanceId, captureId, opts);
+    }
     try {
       const client = await this.runtimeClientForInstance(instanceId);
       const res = await client.getCapture(captureId);
@@ -615,6 +665,26 @@ export class CapturesService {
   async export(
     query: CaptureQuery & { export_format?: 'har' | 'json' },
   ): Promise<Record<string, unknown>> {
+    const backend = query.backend ?? 'runtime';
+    if (backend === 'whistle-web') {
+      if (query.export_format === 'har') {
+        throw new CliError({
+          code: 'UNSUPPORTED_OPERATION',
+          message: 'Whistle Web capture export only supports json format',
+          suggested_fix:
+            'Use --export-format json, or use --backend runtime for backend-provided HAR export.',
+        });
+      }
+      const limit = normalizeLimit(query.limit);
+      const items = await this.readWhistleWebCaptures({ ...query, backend: 'whistle-web' }, limit);
+      return {
+        backend: 'whistle-web',
+        format: 'json',
+        filters: query.filters,
+        count: items.length,
+        items,
+      };
+    }
     try {
       const client = await this.runtimeClientForInstance(query.instance_id);
       const limit = normalizeLimit(query.limit);
@@ -627,6 +697,32 @@ export class CapturesService {
     } catch (e) {
       normalizeRuntimeBackendError(e);
     }
+  }
+
+  async getHeader(
+    instanceId: string,
+    captureId: string,
+    header: string,
+    opts?: { backend?: CaptureBackend; limit?: number },
+  ): Promise<CaptureHeaderResult> {
+    const backend = opts?.backend ?? 'runtime';
+    const record = await this.get(instanceId, captureId, { backend, limit: opts?.limit });
+    const value = getHeaderValue(record.request_headers, header);
+    if (value == null) {
+      throw new CliError({
+        code: 'NO_CAPTURE_MATCH',
+        message: 'Requested capture header was not found',
+        reason: `${header} not present on capture ${captureId}`,
+        suggested_fix:
+          'Check the header name and retrieve the capture to inspect available request headers.',
+      });
+    }
+    return {
+      capture_id: record.capture_id,
+      backend: record.backend ?? backend,
+      header,
+      value,
+    };
   }
 
   async *tail(query: CaptureQuery): AsyncGenerator<CaptureRecord, void, unknown> {

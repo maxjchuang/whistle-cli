@@ -83,6 +83,23 @@ Safety defaults:
 - Do not print cookies, authorization headers, CSRF tokens, session tokens, or full raw headers in user-facing responses.
 - Use `--save <file>` for a redacted matched summary when evidence must survive Whistle's short query window.
 
+When automation needs one exact header from the matched request, keep the sensitive value in command output handling and avoid user-facing logs:
+
+1. Read `data.match.capture_id` from `captures assert-request`.
+2. Retrieve the exact capture if full context is needed:
+   - `whistle-cli --format json captures get --backend whistle-web --id <capture_id>`
+3. Prefer extracting only the needed header:
+   - `whistle-cli --format json captures get-header --backend whistle-web --id <capture_id> --header cookie`
+4. Immediately pass the value to the follow-up command without writing it to disk or showing it in the conversation.
+
+For JSON export from Whistle Web, use:
+
+- `whistle-cli --format json captures export --backend whistle-web --host app.example.com --path /api/ --export-format json`
+
+If direct Whistle Web API fallback is unavoidable, use `dumpCount` to increase the returned session window:
+
+- `/cgi-bin/get-data?startTime=0&dumpCount=1000`
+
 Intent filters:
 
 - Chatbot skill list:
