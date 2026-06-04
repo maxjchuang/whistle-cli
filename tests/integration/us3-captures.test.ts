@@ -496,6 +496,131 @@ describe('US3 captures (integration)', () => {
     }
   });
 
+  it('captures get-header saves env output without leaking the value to stdout', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {
+        header_cap: {
+          id: 'header_cap',
+          url: 'https://app.example.com/api/session',
+          req: {
+            method: 'GET',
+            headers: {
+              host: 'app.example.com',
+              cookie: 'session=secret',
+            },
+          },
+          res: { statusCode: 200 },
+        },
+      },
+    });
+    try {
+      const envPath = path.join(stateDir, 'one.env');
+      const rawPath = path.join(stateDir, 'one.txt');
+      const jsonPath = path.join(stateDir, 'one.json');
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'get-header',
+          '--backend',
+          'whistle-web',
+          '--id',
+          'header_cap',
+          '--header',
+          'cookie',
+          '--save-env',
+          envPath,
+          '--env-key',
+          '_devops_cookie',
+          '--save-value',
+          rawPath,
+          '--save-json',
+          jsonPath,
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).toBe(0);
+      const envelope = JSON.parse(res.stdout);
+      expect(envelope.data).toMatchObject({
+        capture_id: 'header_cap',
+        backend: 'whistle-web',
+        header: 'cookie',
+        present: true,
+        redacted: true,
+        saved_to: [rawPath, envPath, jsonPath],
+      });
+      expect(JSON.stringify(envelope)).not.toContain('session=secret');
+      await expect(fs.readFile(envPath, 'utf8')).resolves.toBe(
+        '_devops_cookie="session=secret"\n',
+      );
+      await expect(fs.readFile(rawPath, 'utf8')).resolves.toBe('session=secret');
+      await expect(fs.readFile(jsonPath, 'utf8')).resolves.toBe(
+        `${JSON.stringify({ cookie: 'session=secret' }, null, 2)}\n`,
+      );
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures get-header keeps value output when no safe output option is used', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {
+        header_cap: {
+          id: 'header_cap',
+          url: 'https://app.example.com/api/session',
+          req: {
+            method: 'GET',
+            headers: {
+              host: 'app.example.com',
+              cookie: 'session=abc',
+            },
+          },
+          res: { statusCode: 200 },
+        },
+      },
+    });
+    try {
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'get-header',
+          '--backend',
+          'whistle-web',
+          '--id',
+          'header_cap',
+          '--header',
+          'cookie',
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).toBe(0);
+      expect(JSON.parse(res.stdout).data.value).toBe('session=abc');
+    } finally {
+      await backend.close();
+    }
+  });
+
   it('captures capture-headers ignores baseline captures by default and saves only a new match', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const baseline = {

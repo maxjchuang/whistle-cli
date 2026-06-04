@@ -175,6 +175,11 @@ type CaptureGetOptions = {
 
 type CaptureGetHeaderOptions = CaptureGetOptions & {
   header: string;
+  redact?: boolean;
+  saveValue?: string;
+  saveEnv?: string;
+  envKey?: string;
+  saveJson?: string;
 };
 
 type CaptureAssertRequestCommandOptions = CaptureFindOptions & {
@@ -306,6 +311,11 @@ export function registerCapturesResource(program: Command): void {
     .requiredOption('--header <name>', 'Request header name')
     .option('--backend <backend>', 'Capture backend: whistle-web|runtime', 'runtime')
     .option('--limit <n>', 'Recent Whistle Web records to inspect', '200')
+    .option('--redact', 'Do not print the header value')
+    .option('--save-value <file>', 'Write the raw header value to a file')
+    .option('--save-env <file>', 'Write the header value as one dotenv assignment')
+    .option('--env-key <name>', 'Env key for --save-env')
+    .option('--save-json <file>', 'Write the header value as JSON')
     .action(async (cmdOpts: CaptureGetHeaderOptions) => {
       const opts = program.opts();
       const format = (opts.format ?? 'json') as OutputFormat;
@@ -317,9 +327,28 @@ export function registerCapturesResource(program: Command): void {
           backend,
           limit: Number(cmdOpts.limit ?? 200),
         });
+        const values = [{ header: data.header, value: data.value }];
+        const rawPath = writeTextFile(cmdOpts.saveValue, data.value);
+        const envMap = cmdOpts.envKey
+          ? new Map([[data.header.toLowerCase(), String(cmdOpts.envKey)]])
+          : undefined;
+        const envPath = writeHeaderEnvFile(cmdOpts.saveEnv, values, envMap);
+        const jsonPath = writeHeaderJsonFile(cmdOpts.saveJson, values);
+        const saved_to = savedPaths(rawPath, envPath, jsonPath);
+        const shouldRedact = Boolean(cmdOpts.redact || saved_to);
+        const safeData = shouldRedact
+          ? {
+              capture_id: data.capture_id,
+              backend: data.backend,
+              header: data.header,
+              present: true,
+              redacted: true,
+              saved_to,
+            }
+          : data;
         process.stdout.write(
           renderEnvelope(
-            okEnvelope('captures', action, data, { instance: resolved, effective: true }),
+            okEnvelope('captures', action, safeData, { instance: resolved, effective: true }),
             format,
           ),
         );
