@@ -642,6 +642,112 @@ describe('US3 captures (integration)', () => {
     }
   });
 
+  it('captures capture-headers can use existing captures and env-map overrides', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {
+        existing_session: {
+          id: 'existing_session',
+          url: 'https://app.example.com/api/session',
+          req: {
+            method: 'GET',
+            headers: {
+              host: 'app.example.com',
+              cookie: "session='quoted'",
+              'x-signature-key': 'sig-value',
+            },
+          },
+          res: { statusCode: 200 },
+        },
+      },
+    });
+    try {
+      const envPath = path.join(stateDir, 'headers.env');
+      const jsonPath = path.join(stateDir, 'headers.json');
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'capture-headers',
+          '--backend',
+          'whistle-web',
+          '--host',
+          'app.example.com',
+          '--path',
+          '/api/session',
+          '--headers',
+          'cookie,x-signature-key',
+          '--allow-existing',
+          '--save-env',
+          envPath,
+          '--save-json',
+          jsonPath,
+          '--env-map',
+          'cookie=DEVOPS_COOKIE',
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).toBe(0);
+      const envelope = JSON.parse(res.stdout);
+      expect(envelope.data.capture_id).toBe('existing_session');
+      expect(envelope.data.saved_to).toEqual([envPath, jsonPath]);
+      expect(JSON.stringify(envelope)).not.toContain('sig-value');
+      const envFile = await fs.readFile(envPath, 'utf8');
+      expect(envFile).toContain('DEVOPS_COOKIE="session=\'quoted\'"');
+      expect(envFile).toContain('X_SIGNATURE_KEY="sig-value"');
+      const jsonFile = JSON.parse(await fs.readFile(jsonPath, 'utf8'));
+      expect(jsonFile).toEqual({
+        cookie: "session='quoted'",
+        'x-signature-key': 'sig-value',
+      });
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures capture-headers rejects commands without a save target', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({ disableCaptureRuntimeRoutes: true });
+    try {
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'capture-headers',
+          '--backend',
+          'whistle-web',
+          '--host',
+          'example.com',
+          '--headers',
+          'cookie',
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).not.toBe(0);
+      expect(res.stderr).toContain('"code":"UNSUPPORTED_OPERATION"');
+      expect(res.stderr).toContain('requires a save target');
+    } finally {
+      await backend.close();
+    }
+  });
+
   it('captures assert-request returns warning timeout with next actions', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend({
