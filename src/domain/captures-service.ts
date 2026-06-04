@@ -8,6 +8,8 @@ import type {
   CaptureAssertRequestResult,
   CaptureBackend,
   CaptureHeaderResult,
+  CaptureHeadersOptions,
+  CaptureHeadersResult,
   CaptureQuery,
   CaptureRecord,
   CaptureSummary,
@@ -211,7 +213,7 @@ export function normalizeWhistleWebCapture(
   };
 }
 
-function getHeaderValue(
+export function getCaptureHeaderValue(
   headers: Record<string, string> | undefined,
   header: string,
 ): string | undefined {
@@ -222,6 +224,17 @@ function getHeaderValue(
     if (candidate.toLowerCase() === key) return value;
   }
   return undefined;
+}
+
+function getHeaderValue(
+  headers: Record<string, string> | undefined,
+  header: string,
+): string | undefined {
+  return getCaptureHeaderValue(headers, header);
+}
+
+export function whistleWebDumpCountForLimit(limit: number): number {
+  return Math.min(Math.max(limit * 5, 100), 1000);
 }
 
 function parseMatchedRulesSummary(matchedRules: unknown): string[] | undefined {
@@ -459,7 +472,7 @@ export class CapturesService {
     limit: number,
   ): Promise<CaptureRecord[]> {
     const client = await this.whistleWebClientForInstance(query.instance_id);
-    const dumpCount = Math.min(Math.max(limit * 5, 100), 1000);
+    const dumpCount = whistleWebDumpCountForLimit(limit);
     const res = await client.getData({ startTime: 0, dumpCount });
     const rawItems = Object.entries(res.data?.data ?? {});
     const filters = query.filters;
@@ -487,7 +500,7 @@ export class CapturesService {
   ): Promise<CaptureRecord> {
     const client = await this.whistleWebClientForInstance(instanceId);
     const limit = normalizeLimit(opts?.limit ?? 200);
-    const dumpCount = Math.min(Math.max(limit * 5, 100), 1000);
+    const dumpCount = whistleWebDumpCountForLimit(limit);
     const res = await client.getData({ startTime: 0, dumpCount });
     for (const [id, raw] of Object.entries(res.data?.data ?? {})) {
       if (!sourceCaptureIdMatches(raw, id, captureId)) continue;
@@ -539,6 +552,120 @@ export class CapturesService {
     const rawItems = Array.isArray(res.items) ? res.items : [];
     const items = rawItems.map((r) => normalizeRuntimeCapture(r, query.instance_id));
     return this.buildFindResult(query, items);
+  }
+
+  private selectedHeaders(
+    record: CaptureRecord,
+    headers: string[],
+  ): { complete: boolean; values: Array<{ header: string; value: string }>; missing: string[] } {
+    const values: Array<{ header: string; value: string }> = [];
+    const missing: string[] = [];
+    for (const header of headers) {
+      const value = getHeaderValue(record.request_headers, header);
+      if (value == null) {
+        missing.push(header);
+      } else {
+        values.push({ header, value });
+      }
+    }
+    return { complete: missing.length === 0, values, missing };
+  }
+
+  async captureHeaders(
+    query: CaptureQuery,
+    opts: CaptureHeadersOptions,
+  ): Promise<CaptureHeadersResult> {
+    const headers: string[] = [];
+    const headerKeys = new Set<string>();
+    for (const rawHeader of opts.headers) {
+      const header = rawHeader.trim();
+      if (!header) continue;
+      const key = header.toLowerCase();
+      if (headerKeys.has(key)) continue;
+      headerKeys.add(key);
+      headers.push(header);
+    }
+    if (headers.length === 0) {
+      throw new CliError({
+        code: 'UNSUPPORTED_OPERATION',
+        message: 'At least one request header is required',
+        suggested_fix: 'Use --headers cookie,x-csrftoken.',
+      });
+    }
+
+    const timeoutMs = opts.timeoutMs ?? 60_000;
+    const pollIntervalMs = Math.max(50, opts.pollIntervalMs ?? 1000);
+    const deadline = Date.now() + timeoutMs;
+    const baselineResult = await this.find(query);
+    const baseline = new Set(baselineResult.items.map((item) => item.capture_id));
+    const scannedCaptureIds = new Set<string>();
+    const matchedCaptureIds = new Set<string>();
+    let lastMissing: string[] = headers;
+    let lastCaptureId: string | undefined;
+
+    const inspect = (items: CaptureRecord[]): CaptureHeadersResult | undefined => {
+      for (const item of items) {
+        if (!opts.allowExisting && baseline.has(item.capture_id)) continue;
+        scannedCaptureIds.add(item.capture_id);
+        const selected = this.selectedHeaders(item, headers);
+        matchedCaptureIds.add(item.capture_id);
+        lastCaptureId = item.capture_id;
+        if (!selected.complete) {
+          lastMissing = selected.missing;
+          continue;
+        }
+        const presence = Object.fromEntries(
+          headers.map((header) => [header, { present: true }]),
+        ) as CaptureHeadersResult['headers'];
+        return {
+          capture_id: item.capture_id,
+          backend: item.backend ?? (query.backend === 'runtime' ? 'runtime' : 'whistle-web'),
+          method: item.method,
+          host: item.host,
+          path: item.path,
+          headers: presence,
+          values: selected.values,
+          scanned: scannedCaptureIds.size,
+          matched: matchedCaptureIds.size,
+        };
+      }
+      return undefined;
+    };
+
+    if (opts.allowExisting) {
+      const existing = inspect(baselineResult.items);
+      if (existing) return existing;
+    }
+
+    do {
+      const result = await this.find(query);
+      const found = inspect(result.items);
+      if (found) return found;
+      const remainingMs = deadline - Date.now();
+      if (remainingMs > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)),
+        );
+      }
+    } while (Date.now() < deadline);
+
+    if (matchedCaptureIds.size > 0) {
+      throw new CliError({
+        code: 'CAPTURE_HEADERS_MISSING',
+        message: 'Matching captures were found, but required request headers were missing',
+        reason: `missing_headers=${lastMissing.join(',')}; capture_id=${lastCaptureId ?? 'unknown'}; scanned=${scannedCaptureIds.size}`,
+        suggested_fix:
+          'Confirm the requested header names, re-trigger the browser request, or broaden the host/path filters.',
+      });
+    }
+
+    throw new CliError({
+      code: 'NO_CAPTURE_MATCH',
+      message: 'No matching capture was found while waiting for request headers',
+      reason: `scanned=${scannedCaptureIds.size}`,
+      suggested_fix:
+        'Re-trigger the target browser request while the command is running, or use --allow-existing if reusing a recent request is intended.',
+    });
   }
 
   async assertHeader(
