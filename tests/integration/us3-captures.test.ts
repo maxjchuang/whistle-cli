@@ -665,6 +665,130 @@ describe('US3 captures (integration)', () => {
     }
   });
 
+  it('captures get-header preflights save targets before writing secret files', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {
+        header_cap: {
+          id: 'header_cap',
+          url: 'https://app.example.com/api/session',
+          req: {
+            method: 'GET',
+            headers: {
+              host: 'app.example.com',
+              cookie: 'session=secret',
+            },
+          },
+          res: { statusCode: 200 },
+        },
+      },
+    });
+    try {
+      const rawPath = path.join(stateDir, 'one.txt');
+      const envPath = path.join(stateDir, 'one.env');
+      const jsonPath = path.join(stateDir, 'missing-dir', 'one.json');
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'get-header',
+          '--backend',
+          'whistle-web',
+          '--id',
+          'header_cap',
+          '--header',
+          'cookie',
+          '--save-value',
+          rawPath,
+          '--save-env',
+          envPath,
+          '--save-json',
+          jsonPath,
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).not.toBe(0);
+      const envelope = JSON.parse(res.stderr);
+      expect(envelope.error.code).toBe('UNSUPPORTED_OPERATION');
+      expect(envelope.error.reason).toContain(jsonPath);
+      expect(JSON.stringify(envelope)).not.toContain('session=secret');
+      await expect(fs.access(rawPath)).rejects.toThrow();
+      await expect(fs.access(envPath)).rejects.toThrow();
+      await expect(fs.access(jsonPath)).rejects.toThrow();
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures get-header rejects directory save targets before writing earlier files', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {
+        header_cap: {
+          id: 'header_cap',
+          url: 'https://app.example.com/api/session',
+          req: {
+            method: 'GET',
+            headers: {
+              host: 'app.example.com',
+              cookie: 'session=secret',
+            },
+          },
+          res: { statusCode: 200 },
+        },
+      },
+    });
+    try {
+      const rawPath = path.join(stateDir, 'one.txt');
+      const directoryTarget = path.join(stateDir, 'json-target-dir');
+      await fs.mkdir(directoryTarget);
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'get-header',
+          '--backend',
+          'whistle-web',
+          '--id',
+          'header_cap',
+          '--header',
+          'cookie',
+          '--save-value',
+          rawPath,
+          '--save-json',
+          directoryTarget,
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).not.toBe(0);
+      const envelope = JSON.parse(res.stderr);
+      expect(envelope.error.code).toBe('UNSUPPORTED_OPERATION');
+      expect(envelope.error.reason).toContain(directoryTarget);
+      expect(JSON.stringify(envelope)).not.toContain('session=secret');
+      await expect(fs.access(rawPath)).rejects.toThrow();
+    } finally {
+      await backend.close();
+    }
+  });
+
   it('captures capture-headers ignores baseline captures by default and saves only a new match', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const baseline = {
@@ -884,6 +1008,136 @@ describe('US3 captures (integration)', () => {
         cookie: "session='quoted'",
         'x-signature-key': 'sig-value',
       });
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures capture-headers preflights all save targets before writing secret files', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {
+        existing_session: {
+          id: 'existing_session',
+          url: 'https://app.example.com/api/session',
+          req: {
+            method: 'GET',
+            headers: {
+              host: 'app.example.com',
+              cookie: 'session=secret',
+              'x-csrftoken': 'csrf-secret',
+            },
+          },
+          res: { statusCode: 200 },
+        },
+      },
+    });
+    try {
+      const envPath = path.join(stateDir, 'headers.env');
+      const jsonPath = path.join(stateDir, 'missing-dir', 'headers.json');
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'capture-headers',
+          '--backend',
+          'whistle-web',
+          '--host',
+          'app.example.com',
+          '--path',
+          '/api/session',
+          '--headers',
+          'cookie,x-csrftoken',
+          '--allow-existing',
+          '--save-env',
+          envPath,
+          '--save-json',
+          jsonPath,
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).not.toBe(0);
+      const envelope = JSON.parse(res.stderr);
+      expect(envelope.error.code).toBe('UNSUPPORTED_OPERATION');
+      expect(envelope.error.reason).toContain(jsonPath);
+      expect(JSON.stringify(envelope)).not.toContain('session=secret');
+      expect(JSON.stringify(envelope)).not.toContain('csrf-secret');
+      await expect(fs.access(envPath)).rejects.toThrow();
+      await expect(fs.access(jsonPath)).rejects.toThrow();
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures capture-headers rejects directory save targets before writing earlier files', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {
+        existing_session: {
+          id: 'existing_session',
+          url: 'https://app.example.com/api/session',
+          req: {
+            method: 'GET',
+            headers: {
+              host: 'app.example.com',
+              cookie: 'session=secret',
+              'x-csrftoken': 'csrf-secret',
+            },
+          },
+          res: { statusCode: 200 },
+        },
+      },
+    });
+    try {
+      const envPath = path.join(stateDir, 'headers.env');
+      const directoryTarget = path.join(stateDir, 'json-target-dir');
+      await fs.mkdir(directoryTarget);
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'capture-headers',
+          '--backend',
+          'whistle-web',
+          '--host',
+          'app.example.com',
+          '--path',
+          '/api/session',
+          '--headers',
+          'cookie,x-csrftoken',
+          '--allow-existing',
+          '--save-env',
+          envPath,
+          '--save-json',
+          directoryTarget,
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).not.toBe(0);
+      const envelope = JSON.parse(res.stderr);
+      expect(envelope.error.code).toBe('UNSUPPORTED_OPERATION');
+      expect(envelope.error.reason).toContain(directoryTarget);
+      expect(JSON.stringify(envelope)).not.toContain('session=secret');
+      expect(JSON.stringify(envelope)).not.toContain('csrf-secret');
+      await expect(fs.access(envPath)).rejects.toThrow();
     } finally {
       await backend.close();
     }

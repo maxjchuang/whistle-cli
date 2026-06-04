@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
-import { writeFileSync } from 'node:fs';
+import { accessSync, constants, statSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import type { OutputFormat } from '../cli/program';
 import { resolveInstanceId } from '../shared/instance-context';
 import { CliError } from '../output/errors';
@@ -53,6 +54,42 @@ function writeJsonFile(file: unknown, data: unknown): string | undefined {
   const filePath = String(file);
   writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
   return filePath;
+}
+
+function assertSaveTargetsWritable(...files: unknown[]): void {
+  for (const file of files) {
+    if (!file) continue;
+    const filePath = String(file);
+    const parent = path.dirname(filePath);
+    try {
+      const parentStat = statSync(parent);
+      if (!parentStat.isDirectory()) {
+        throw new Error(`${parent} is not a directory`);
+      }
+      accessSync(parent, constants.W_OK);
+      try {
+        const targetStat = statSync(filePath);
+        if (!targetStat.isFile()) {
+          throw new Error(`${filePath} is not a file`);
+        }
+        accessSync(filePath, constants.W_OK);
+      } catch (e) {
+        const code = (e as { code?: unknown }).code;
+        if (code !== 'ENOENT') throw e;
+      }
+    } catch (e) {
+      throw new CliError(
+        {
+          code: 'UNSUPPORTED_OPERATION',
+          message: 'Capture header save target is not writable',
+          reason: `file=${filePath}`,
+          suggested_fix:
+            'Create the parent directory or choose a writable path before retrying.',
+        },
+        e,
+      );
+    }
+  }
 }
 
 function splitCsv(input: unknown): string[] {
@@ -327,6 +364,7 @@ export function registerCapturesResource(program: Command): void {
           backend,
           limit: Number(cmdOpts.limit ?? 200),
         });
+        assertSaveTargetsWritable(cmdOpts.saveValue, cmdOpts.saveEnv, cmdOpts.saveJson);
         const values = [{ header: data.header, value: data.value }];
         const rawPath = writeTextFile(cmdOpts.saveValue, data.value);
         const envMap = cmdOpts.envKey
@@ -490,6 +528,7 @@ export function registerCapturesResource(program: Command): void {
           },
         );
         const envMap = parseEnvMap(cmdOpts.envMap);
+        assertSaveTargetsWritable(cmdOpts.saveEnv, cmdOpts.saveJson);
         const envPath = writeHeaderEnvFile(cmdOpts.saveEnv, result.values, envMap);
         const jsonPath = writeHeaderJsonFile(cmdOpts.saveJson, result.values);
         const saved_to = savedPaths(envPath, jsonPath);
