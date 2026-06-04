@@ -5,7 +5,11 @@ import { resolveInstanceId } from '../shared/instance-context';
 import { CliError } from '../output/errors';
 import { errorEnvelope, okEnvelope, warningEnvelope } from '../output/result';
 import { renderEnvelope } from '../output/renderers';
-import { CapturesService, filterNewHeaderAssertionEvents } from '../domain/captures-service';
+import {
+  CapturesService,
+  filterNewHeaderAssertionEvents,
+  whistleWebDumpCountForLimit,
+} from '../domain/captures-service';
 
 function parseDurationMs(input: unknown): number {
   const raw = String(input ?? '60s').trim();
@@ -15,6 +19,12 @@ function parseDurationMs(input: unknown): number {
       ? Number(raw.slice(0, -1)) * 1000
       : Number(raw) * 1000;
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 60_000;
+}
+
+function normalizeCaptureLimit(input: unknown): number {
+  const value = typeof input === 'number' ? input : Number(String(input ?? ''));
+  if (!Number.isFinite(value) || value <= 0) return 30;
+  return Math.min(Math.max(Math.floor(value), 1), 200);
 }
 
 function splitHeaderPair(pair: string): { header: string; equals: string } {
@@ -43,6 +53,80 @@ function writeJsonFile(file: unknown, data: unknown): string | undefined {
   const filePath = String(file);
   writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
   return filePath;
+}
+
+function splitCsv(input: unknown): string[] {
+  return String(input ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function envKeyForHeader(header: string): string {
+  return header
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function parseEnvMap(input: unknown): Map<string, string> {
+  const map = new Map<string, string>();
+  if (input == null) return map;
+  for (const pair of splitCsv(input)) {
+    const idx = pair.indexOf('=');
+    if (idx <= 0 || idx === pair.length - 1) {
+      throw new CliError({
+        code: 'UNSUPPORTED_OPERATION',
+        message: 'Expected env map entries in header=ENV_KEY format',
+        suggested_fix: 'Use --env-map cookie=DEVOPS_COOKIE,x-csrftoken=DEVOPS_CSRF.',
+      });
+    }
+    map.set(pair.slice(0, idx).toLowerCase(), pair.slice(idx + 1));
+  }
+  return map;
+}
+
+function escapeDotenvValue(value: string): string {
+  return `"${value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')}"`;
+}
+
+function writeTextFile(file: unknown, value: string): string | undefined {
+  if (!file) return undefined;
+  const filePath = String(file);
+  writeFileSync(filePath, value, 'utf8');
+  return filePath;
+}
+
+function writeHeaderEnvFile(
+  file: unknown,
+  values: Array<{ header: string; value: string }>,
+  envMap?: Map<string, string>,
+): string | undefined {
+  if (!file) return undefined;
+  const lines = values.map(({ header, value }) => {
+    const key = envMap?.get(header.toLowerCase()) ?? envKeyForHeader(header);
+    return `${key}=${escapeDotenvValue(value)}`;
+  });
+  return writeTextFile(file, `${lines.join('\n')}\n`);
+}
+
+function writeHeaderJsonFile(
+  file: unknown,
+  values: Array<{ header: string; value: string }>,
+): string | undefined {
+  if (!file) return undefined;
+  const payload = Object.fromEntries(values.map(({ header, value }) => [header, value]));
+  return writeJsonFile(file, payload);
+}
+
+function savedPaths(...paths: Array<string | undefined>): string[] | undefined {
+  const out = paths.filter((path): path is string => Boolean(path));
+  return out.length ? out : undefined;
 }
 
 function assertFindBackend(backend: unknown): 'auto' | 'whistle-web' | 'runtime' {
@@ -97,6 +181,16 @@ type CaptureAssertRequestCommandOptions = CaptureFindOptions & {
   timeout?: string;
   pollInterval?: string;
   save?: string;
+};
+
+type CaptureHeadersCommandOptions = CaptureFindOptions & {
+  headers: string;
+  timeout?: string;
+  pollInterval?: string;
+  allowExisting?: boolean;
+  saveEnv?: string;
+  saveJson?: string;
+  envMap?: string;
 };
 
 type CaptureAssertHeaderOptions = {
@@ -308,6 +402,100 @@ export function registerCapturesResource(program: Command): void {
         { instance: resolved, effective: true, event: 'end', meta: { verified: true } },
       );
       process.stdout.write(renderEnvelope(endEnvelope, 'ndjson'));
+    });
+
+  captures
+    .command('capture-headers')
+    .description('Capture selected request headers into local files without printing values')
+    .option('--host <host>', 'Filter by host')
+    .option('--path <path>', 'Filter by request path substring')
+    .option('--method <method>', 'Filter by HTTP method')
+    .option('--status <status>', 'Filter by status code')
+    .option('--keyword <keyword>', 'Search keyword')
+    .option('--limit <n>', 'Recent Whistle Web records to inspect', '200')
+    .requiredOption('--headers <headers>', 'Comma-separated request header names')
+    .option('--timeout <duration>', 'Observation timeout, e.g. 60s', '60s')
+    .option('--poll-interval <duration>', 'Polling interval, e.g. 1s', '1s')
+    .option('--allow-existing', 'Allow using a capture already present when the command starts')
+    .option('--save-env <file>', 'Write selected headers as dotenv assignments')
+    .option('--save-json <file>', 'Write selected headers as JSON')
+    .option('--env-map <pairs>', 'Comma-separated header=ENV_KEY overrides')
+    .option('--backend <backend>', 'Capture backend: whistle-web', 'whistle-web')
+    .action(async (cmdOpts: CaptureHeadersCommandOptions) => {
+      const opts = program.opts();
+      const format = (opts.format ?? 'json') as OutputFormat;
+      const resolved = await resolveInstanceId(opts.instance);
+      const action = 'capture-headers';
+      try {
+        const backend = assertCaptureBackend(cmdOpts.backend ?? 'whistle-web');
+        if (backend !== 'whistle-web') {
+          throw new CliError({
+            code: 'UNSUPPORTED_OPERATION',
+            message: 'captures capture-headers only supports the whistle-web backend',
+            suggested_fix: 'Use --backend whistle-web for browser-driven capture handoff.',
+          });
+        }
+        if (!cmdOpts.saveEnv && !cmdOpts.saveJson) {
+          throw new CliError({
+            code: 'UNSUPPORTED_OPERATION',
+            message: 'captures capture-headers requires a save target',
+            suggested_fix: 'Use --save-env <file> or --save-json <file>.',
+          });
+        }
+        const headers = splitCsv(cmdOpts.headers);
+        const limit = normalizeCaptureLimit(cmdOpts.limit ?? 200);
+        const filters = {
+          host: cmdOpts.host ? String(cmdOpts.host) : undefined,
+          path: cmdOpts.path ? String(cmdOpts.path) : undefined,
+          method: cmdOpts.method ? String(cmdOpts.method) : undefined,
+          status: cmdOpts.status ? Number(cmdOpts.status) : undefined,
+          keyword: cmdOpts.keyword ? String(cmdOpts.keyword) : undefined,
+        };
+        const result = await service.captureHeaders(
+          { instance_id: resolved.id, filters, limit, backend },
+          {
+            headers,
+            timeoutMs: parseDurationMs(cmdOpts.timeout),
+            pollIntervalMs: parseDurationMs(cmdOpts.pollInterval),
+            allowExisting: Boolean(cmdOpts.allowExisting),
+          },
+        );
+        const envMap = parseEnvMap(cmdOpts.envMap);
+        const envPath = writeHeaderEnvFile(cmdOpts.saveEnv, result.values, envMap);
+        const jsonPath = writeHeaderJsonFile(cmdOpts.saveJson, result.values);
+        const saved_to = savedPaths(envPath, jsonPath);
+        const safeResult = {
+          capture_id: result.capture_id,
+          backend: result.backend,
+          method: result.method,
+          host: result.host,
+          path: result.path,
+          headers: result.headers,
+          scanned: result.scanned,
+          matched: result.matched,
+        };
+        process.stdout.write(
+          renderEnvelope(
+            okEnvelope(
+              'captures',
+              action,
+              {
+                ...safeResult,
+                saved_to,
+                dump_count: whistleWebDumpCountForLimit(limit),
+              },
+              { instance: resolved, effective: true },
+            ),
+            format,
+          ),
+        );
+      } catch (e) {
+        const err = CliError.fromUnknown(e);
+        process.stderr.write(
+          renderEnvelope(errorEnvelope('captures', action, err, { instance: resolved }), format),
+        );
+        process.exitCode = 1;
+      }
     });
 
   captures

@@ -496,6 +496,152 @@ describe('US3 captures (integration)', () => {
     }
   });
 
+  it('captures capture-headers ignores baseline captures by default and saves only a new match', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const baseline = {
+      old_session: {
+        id: 'old_session',
+        url: 'https://app.example.com/api/session',
+        req: {
+          method: 'GET',
+          headers: {
+            host: 'app.example.com',
+            cookie: 'session=old',
+            'x-csrftoken': 'csrf-old',
+          },
+        },
+        res: { statusCode: 200 },
+      },
+    };
+    const next = {
+      ...baseline,
+      new_session: {
+        id: 'new_session',
+        url: 'https://app.example.com/api/session',
+        req: {
+          method: 'GET',
+          headers: {
+            host: 'app.example.com',
+            cookie: 'session=new',
+            'x-csrftoken': 'csrf-new',
+          },
+        },
+        res: { statusCode: 200 },
+      },
+    };
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureSequence: [baseline, next, next],
+    });
+    try {
+      const envPath = path.join(stateDir, 'headers.env');
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'capture-headers',
+          '--backend',
+          'whistle-web',
+          '--host',
+          'app.example.com',
+          '--path',
+          '/api/session',
+          '--headers',
+          'cookie,x-csrftoken',
+          '--timeout',
+          '1s',
+          '--poll-interval',
+          '50ms',
+          '--save-env',
+          envPath,
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).toBe(0);
+      const envelope = JSON.parse(res.stdout);
+      expect(envelope.data.capture_id).toBe('new_session');
+      expect(JSON.stringify(envelope)).not.toContain('session=new');
+      expect(JSON.stringify(envelope)).not.toContain('csrf-new');
+      const saved = await fs.readFile(envPath, 'utf8');
+      expect(saved).toContain('COOKIE="session=new"');
+      expect(saved).toContain('X_CSRFTOKEN="csrf-new"');
+      expect(saved).not.toContain('session=old');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures capture-headers reports missing requested headers without writing partial files', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureSequence: [
+        {},
+        {
+          missing_header_cap: {
+            id: 'missing_header_cap',
+            url: 'https://app.example.com/api/session',
+            req: {
+              method: 'GET',
+              headers: {
+                host: 'app.example.com',
+                cookie: 'session=abc',
+              },
+            },
+            res: { statusCode: 200 },
+          },
+        },
+      ],
+    });
+    try {
+      const envPath = path.join(stateDir, 'headers.env');
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'capture-headers',
+          '--backend',
+          'whistle-web',
+          '--host',
+          'app.example.com',
+          '--path',
+          '/api/session',
+          '--headers',
+          'cookie,x-csrftoken',
+          '--timeout',
+          '200ms',
+          '--poll-interval',
+          '50ms',
+          '--save-env',
+          envPath,
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).not.toBe(0);
+      expect(res.stderr).toContain('"code":"CAPTURE_HEADERS_MISSING"');
+      expect(res.stderr).toContain('x-csrftoken');
+      await expect(fs.access(envPath)).rejects.toThrow();
+    } finally {
+      await backend.close();
+    }
+  });
+
   it('captures assert-request returns warning timeout with next actions', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend({
