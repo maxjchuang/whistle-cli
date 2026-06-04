@@ -66,6 +66,34 @@ export interface CaptureHeaderResult {
   value: string;
 }
 
+export interface CaptureHeaderSelection {
+  header: string;
+  value: string;
+}
+
+export interface CaptureHeaderPresence {
+  present: boolean;
+}
+
+export interface CaptureHeadersOptions {
+  headers: string[];
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  allowExisting?: boolean;
+}
+
+export interface CaptureHeadersResult {
+  capture_id: string;
+  backend: CaptureBackend;
+  method?: string;
+  host?: string;
+  path?: string;
+  headers: Record<string, CaptureHeaderPresence>;
+  values: CaptureHeaderSelection[];
+  scanned: number;
+  matched: number;
+}
+
 export interface CaptureTiming {
   start_at?: string;
   end_at?: string;
