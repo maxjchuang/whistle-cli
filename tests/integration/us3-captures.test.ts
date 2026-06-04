@@ -496,6 +496,50 @@ describe('US3 captures (integration)', () => {
     }
   });
 
+  it('captures get-header Whistle Web not-found diagnostics include scan window details', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureData: {},
+    });
+    try {
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'get-header',
+          '--backend',
+          'whistle-web',
+          '--id',
+          'missing',
+          '--header',
+          'cookie',
+          '--limit',
+          '25',
+          '--format',
+          'json',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).not.toBe(0);
+      const envelope = JSON.parse(res.stderr);
+      expect(envelope.error.code).toBe('NO_CAPTURE_MATCH');
+      expect(envelope.error.reason).toContain('capture_id=missing');
+      expect(envelope.error.reason).toContain('limit=25');
+      expect(envelope.error.reason).toContain('dump_count=125');
+      expect(envelope.error.reason).toContain('scanned=0');
+      expect(envelope.error.suggested_fix).toContain('--limit 200');
+    } finally {
+      await backend.close();
+    }
+  });
+
   it('captures get-header saves env output without leaking the value to stdout', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend({
@@ -759,7 +803,13 @@ describe('US3 captures (integration)', () => {
         },
       );
       expect(res.exitCode).not.toBe(0);
-      expect(res.stderr).toContain('"code":"CAPTURE_HEADERS_MISSING"');
+      const envelope = JSON.parse(res.stderr);
+      expect(envelope.error.code).toBe('CAPTURE_HEADERS_MISSING');
+      expect(envelope.error.reason).toContain('backend=whistle-web');
+      expect(envelope.error.reason).toContain('limit=200');
+      expect(envelope.error.reason).toContain('dump_count=1000');
+      expect(envelope.error.reason).toContain('matched=');
+      expect(envelope.error.suggested_fix).toContain('--limit 200');
       expect(res.stderr).toContain('x-csrftoken');
       await expect(fs.access(envPath)).rejects.toThrow();
     } finally {

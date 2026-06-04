@@ -502,16 +502,18 @@ export class CapturesService {
     const limit = normalizeLimit(opts?.limit ?? 200);
     const dumpCount = whistleWebDumpCountForLimit(limit);
     const res = await client.getData({ startTime: 0, dumpCount });
+    let scanned = 0;
     for (const [id, raw] of Object.entries(res.data?.data ?? {})) {
+      scanned++;
       if (!sourceCaptureIdMatches(raw, id, captureId)) continue;
       return normalizeWhistleWebCapture(raw, instanceId, id);
     }
     throw new CliError({
       code: 'NO_CAPTURE_MATCH',
       message: 'Whistle Web capture was not found',
-      reason: `capture_id=${captureId}`,
+      reason: `capture_id=${captureId}; limit=${limit}; dump_count=${dumpCount}; scanned=${scanned}`,
       suggested_fix:
-        'The Whistle Web data window may have rotated. Re-run captures assert-request or broaden the export filters immediately after the target request.',
+        'The Whistle Web data window may have rotated. Re-run captures capture-headers or captures assert-request while triggering the request, retry with --limit 200, or broaden export filters immediately after the target request.',
     });
   }
 
@@ -649,22 +651,25 @@ export class CapturesService {
       }
     } while (Date.now() < deadline);
 
+    const diagnosticLimit = normalizeLimit(query.limit);
+    const diagnosticDumpCount = whistleWebDumpCountForLimit(diagnosticLimit);
+
     if (matchedCaptureIds.size > 0) {
       throw new CliError({
         code: 'CAPTURE_HEADERS_MISSING',
         message: 'Matching captures were found, but required request headers were missing',
-        reason: `missing_headers=${lastMissing.join(',')}; capture_id=${lastCaptureId ?? 'unknown'}; scanned=${scannedCaptureIds.size}`,
+        reason: `missing_headers=${lastMissing.join(',')}; capture_id=${lastCaptureId ?? 'unknown'}; backend=${query.backend ?? 'auto'}; limit=${diagnosticLimit}; dump_count=${diagnosticDumpCount}; scanned=${scannedCaptureIds.size}; matched=${matchedCaptureIds.size}`,
         suggested_fix:
-          'Confirm the requested header names, re-trigger the browser request, or broaden the host/path filters.',
+          'Confirm the requested header names, re-trigger the browser request, use --limit 200, or broaden the host/path filters.',
       });
     }
 
     throw new CliError({
       code: 'NO_CAPTURE_MATCH',
       message: 'No matching capture was found while waiting for request headers',
-      reason: `scanned=${scannedCaptureIds.size}`,
+      reason: `backend=${query.backend ?? 'auto'}; limit=${diagnosticLimit}; dump_count=${diagnosticDumpCount}; scanned=${scannedCaptureIds.size}; matched=${matchedCaptureIds.size}`,
       suggested_fix:
-        'Re-trigger the target browser request while the command is running, or use --allow-existing if reusing a recent request is intended.',
+        'Re-trigger the target browser request while the command is running, retry with --limit 200, or use --allow-existing if reusing a recent request is intended.',
     });
   }
 
