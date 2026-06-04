@@ -83,14 +83,27 @@ Safety defaults:
 - Do not print cookies, authorization headers, CSRF tokens, session tokens, or full raw headers in user-facing responses.
 - Use `--save <file>` for a redacted matched summary when evidence must survive Whistle's short query window.
 
-When automation needs one exact header from the matched request, keep the sensitive value in command output handling and avoid user-facing logs:
+For sensitive request-header handoff, prefer the high-level safe workflow:
+
+```bash
+whistle-cli --format json captures capture-headers \
+  --backend whistle-web \
+  --host <host> \
+  --path <path> \
+  --headers cookie,x-csrftoken,x-signature-key \
+  --save-env <file>
+```
+
+Do not ask agents to read cookie or CSRF values from stdout. Use `--allow-existing` only when the user explicitly wants to reuse a recent capture.
+
+When automation needs one exact header from the matched request and safe handoff is not required, keep the value in command output handling and avoid user-facing logs:
 
 1. Read `data.match.capture_id` from `captures assert-request`.
 2. Retrieve the exact capture if full context is needed:
    - `whistle-cli --format json captures get --backend whistle-web --id <capture_id>`
-3. Prefer extracting only the needed header:
+3. Extract only the needed header:
    - `whistle-cli --format json captures get-header --backend whistle-web --id <capture_id> --header cookie`
-4. Immediately pass the value to the follow-up command without writing it to disk or showing it in the conversation.
+4. For sensitive values, add `--redact`, `--save-env`, `--save-json`, or `--save-value` so the value does not appear in stdout.
 
 For JSON export from Whistle Web, use:
 

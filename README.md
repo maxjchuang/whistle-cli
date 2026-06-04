@@ -205,7 +205,27 @@ whistle-cli --format json captures assert-request \
   --timeout 90s \
   --poll-interval 2s \
   --fields capture_id,method,status_code,path,referer
+```
 
+#### Safe Header Handoff
+
+When an agent needs authenticated request headers for a follow-up command, prefer `capture-headers` so values are written to local files and not printed to stdout:
+
+```bash
+whistle-cli --format json captures capture-headers \
+  --backend whistle-web \
+  --host app.example.com \
+  --path /api/session \
+  --headers cookie,x-csrftoken,x-signature-key \
+  --timeout 120s \
+  --save-env .devops-headers.env
+```
+
+By default, the command ignores captures that were already present when it started. Use `--allow-existing` only when reusing a recent matching request is intended. Use `--env-map cookie=DEVOPS_COOKIE` to override generated env keys such as `COOKIE` or `X_SIGNATURE_KEY`.
+
+The command fails unless `--save-env` or `--save-json` is provided. Its JSON output reports capture metadata and header presence only; it does not include header values.
+
+```bash
 # Retrieve the exact capture while it is still in the Whistle Web data window
 whistle-cli --format json captures get \
   --backend whistle-web \
@@ -226,6 +246,8 @@ whistle-cli --format json captures export \
 ```
 
 `assert-request` remains redacted by default for safe agent-facing reporting. Explicit retrieval commands such as `get`, `export`, and `get-header` return captured request header values requested by the user, so avoid logging their output when headers contain credentials.
+
+For a single exact header, `get-header` remains available. Add `--redact`, `--save-env`, `--save-json`, or `--save-value` when the value should not appear in stdout.
 
 If direct Whistle Web API fallback is unavoidable, use `dumpCount` to widen the returned session window, for example: `/cgi-bin/get-data?startTime=0&dumpCount=1000`.
 
