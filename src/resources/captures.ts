@@ -729,17 +729,19 @@ export function registerCapturesResource(program: Command): void {
             keyword: cmdOpts.keyword ? String(cmdOpts.keyword) : undefined,
           };
           const persistent = Boolean(cmdOpts.watch);
+          const abortController = persistent ? new AbortController() : undefined;
           let count = 0;
           let stopReason: WatchStopReason | undefined;
           const stop = (): void => {
             stopReason = 'interrupted';
+            if (!abortController?.signal.aborted) abortController?.abort();
           };
           const onSigint = (): void => stop();
           const onSigterm = (): void => stop();
 
           if (persistent) {
-            process.once('SIGINT', onSigint);
-            process.once('SIGTERM', onSigterm);
+            process.on('SIGINT', onSigint);
+            process.on('SIGTERM', onSigterm);
           }
 
           try {
@@ -753,6 +755,7 @@ export function registerCapturesResource(program: Command): void {
                 fields: splitFields(cmdOpts.fields),
                 forever: persistent,
                 shouldStop: persistent ? () => stopReason != null : undefined,
+                stopSignal: persistent ? abortController?.signal : undefined,
               },
             )) {
               count++;

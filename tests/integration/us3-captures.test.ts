@@ -1451,20 +1451,6 @@ describe('US3 captures (integration)', () => {
             },
             res: { statusCode: 200 },
           },
-        },
-        {
-          old_capture: {
-            id: 'old_capture',
-            url: 'https://app.example.com/space/api/workspace/chatbot/bot1/skills',
-            req: {
-              method: 'GET',
-              headers: {
-                host: 'app.example.com',
-                'x-tt-logid': 'old-logid',
-              },
-            },
-            res: { statusCode: 200 },
-          },
           persistent_watch: {
             id: 'persistent_watch',
             url: 'https://app.example.com/space/api/workspace/chatbot/bot1/skills',
@@ -1495,7 +1481,7 @@ describe('US3 captures (integration)', () => {
         '--duration',
         '20ms',
         '--poll-interval',
-        '50ms',
+        '5s',
         '--fields',
         'capture_id,x_tt_logid',
         '--watch',

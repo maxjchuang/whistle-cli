@@ -330,6 +330,21 @@ function sourceCaptureIdMatches(raw: unknown, fallbackId: string, captureId: str
   return candidates.some((candidate) => String(candidate ?? '') === captureId);
 }
 
+function delayMs(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timeout = setTimeout(done, ms);
+
+    function done(): void {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    }
+
+    signal?.addEventListener('abort', done, { once: true });
+  });
+}
+
 export function summarizeHeaderAssertion(
   records: CaptureRecord[],
   opts: HeaderAssertionOptions,
@@ -763,9 +778,7 @@ export class CapturesService {
       if (shouldStop()) return;
       const remainingMs = forever ? pollIntervalMs : deadline - Date.now();
       if (remainingMs > 0) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)),
-        );
+        await delayMs(Math.min(pollIntervalMs, remainingMs), opts?.stopSignal);
       }
     } while (!shouldStop() && (forever || Date.now() < deadline));
   }

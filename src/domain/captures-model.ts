@@ -53,6 +53,7 @@ export interface CaptureAssertRequestOptions extends CaptureSummaryOptions {
 export interface CaptureWatchRequestSummariesOptions extends CaptureAssertRequestOptions {
   forever?: boolean;
   shouldStop?: () => boolean;
+  stopSignal?: AbortSignal;
 }
 
 export interface CaptureAssertRequestResult {
