@@ -1,9 +1,81 @@
 import { describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { runCli } from './us1-bootstrap.fixtures';
 import { makeTempDir } from './us2-rules.fixtures';
 import { startFakeCaptureBackend } from './us3-captures.fixtures';
+
+type StartedCli = {
+  child: ChildProcessWithoutNullStreams;
+  stdout: () => string;
+  stderr: () => string;
+  wait: () => Promise<{ exitCode: number; signal: NodeJS.Signals | null; stdout: string; stderr: string }>;
+};
+
+function startCli(
+  args: string[],
+  opts?: { env?: Record<string, string | undefined> },
+): StartedCli {
+  const repoRoot = path.resolve(__dirname, '..', '..');
+  const srcEntry = path.join(repoRoot, 'src', 'cli', 'index.ts');
+  const tsxBin = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
+  const child = spawn(process.execPath, [tsxBin, srcEntry, ...args], {
+    env: {
+      ...process.env,
+      ...opts?.env,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.on('data', (chunk: string) => {
+    stderr += chunk;
+  });
+
+  const exit = new Promise<{
+    exitCode: number;
+    signal: NodeJS.Signals | null;
+    stdout: string;
+    stderr: string;
+  }>((resolve) => {
+    child.once('exit', (code, signal) => {
+      resolve({
+        exitCode: code ?? 0,
+        signal,
+        stdout,
+        stderr,
+      });
+    });
+  });
+
+  return {
+    child,
+    stdout: () => stdout,
+    stderr: () => stderr,
+    wait: () => exit,
+  };
+}
+
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 1000,
+  intervalMs = 20,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  } while (Date.now() < deadline);
+  throw new Error('Timed out waiting for condition');
+}
 
 describe('US3 captures (integration)', () => {
   it('captures find returns ok envelope (including empty results)', async () => {
@@ -1283,6 +1355,203 @@ describe('US3 captures (integration)', () => {
       expect(lines[0].data.redacted_headers).toEqual(['cookie']);
       expect(JSON.stringify(lines)).not.toContain('secret');
       expect(lines.at(-1).event).toBe('end');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures watch --watch streams request summaries until interrupted', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureSequence: [
+        {
+          old_capture: {
+            id: 'old_capture',
+            url: 'https://app.example.com/space/api/workspace/chatbot/bot1/skills',
+            req: {
+              method: 'GET',
+              headers: {
+                host: 'app.example.com',
+                'x-tt-logid': 'old-logid',
+              },
+            },
+            res: { statusCode: 200 },
+          },
+        },
+        {
+          old_capture: {
+            id: 'old_capture',
+            url: 'https://app.example.com/space/api/workspace/chatbot/bot1/skills',
+            req: {
+              method: 'GET',
+              headers: {
+                host: 'app.example.com',
+                'x-tt-logid': 'old-logid',
+              },
+            },
+            res: { statusCode: 200 },
+          },
+        },
+        {
+          old_capture: {
+            id: 'old_capture',
+            url: 'https://app.example.com/space/api/workspace/chatbot/bot1/skills',
+            req: {
+              method: 'GET',
+              headers: {
+                host: 'app.example.com',
+                'x-tt-logid': 'old-logid',
+              },
+            },
+            res: { statusCode: 200 },
+          },
+          persistent_watch: {
+            id: 'persistent_watch',
+            url: 'https://app.example.com/space/api/workspace/chatbot/bot1/skills',
+            req: {
+              method: 'GET',
+              headers: {
+                host: 'app.example.com',
+                'x-tt-logid': 'persistent-logid',
+              },
+            },
+            res: { statusCode: 200 },
+          },
+        },
+      ],
+    });
+    const started = startCli(
+      [
+        '--instance',
+        'dummy',
+        'captures',
+        'watch',
+        '--backend',
+        'whistle-web',
+        '--host',
+        'app.example.com',
+        '--path',
+        '/skills',
+        '--duration',
+        '20ms',
+        '--poll-interval',
+        '50ms',
+        '--fields',
+        'capture_id,x_tt_logid',
+        '--watch',
+        '--format',
+        'ndjson',
+      ],
+      {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      },
+    );
+    try {
+      await waitFor(() => started.stdout().includes('persistent_watch'), 1500);
+      expect(started.stdout()).not.toContain('old_capture');
+
+      started.child.kill('SIGINT');
+      const result = await started.wait();
+      expect(result.exitCode).toBe(0);
+
+      const lines = result.stdout
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      expect(lines[0]).toMatchObject({
+        event: 'capture',
+        data: {
+          capture_id: 'persistent_watch',
+          x_tt_logid: 'persistent-logid',
+        },
+      });
+      expect(lines.at(-1)).toMatchObject({
+        event: 'end',
+        data: {
+          ended: true,
+          count: 1,
+          reason: 'interrupted',
+        },
+      });
+    } finally {
+      if (started.child.exitCode == null && !started.child.killed) started.child.kill('SIGTERM');
+      await backend.close();
+    }
+  });
+
+  it('captures watch rejects unsupported since values', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({ disableCaptureRuntimeRoutes: true });
+    try {
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'watch',
+          '--backend',
+          'whistle-web',
+          '--host',
+          'app.example.com',
+          '--since',
+          '12345',
+          '--format',
+          'ndjson',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).not.toBe(0);
+      const envelope = JSON.parse(res.stderr);
+      expect(envelope.event).toBe('error');
+      expect(envelope.error.code).toBe('UNSUPPORTED_OPERATION');
+      expect(envelope.error.message).toContain('Unsupported capture starting point');
+    } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures watch --watch exits on Whistle Web errors', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      failGetData: true,
+    });
+    try {
+      const res = await runCli(
+        [
+          '--instance',
+          'dummy',
+          'captures',
+          'watch',
+          '--backend',
+          'whistle-web',
+          '--host',
+          'app.example.com',
+          '--watch',
+          '--format',
+          'ndjson',
+        ],
+        {
+          env: {
+            WHISTLE_CLI_STATE_DIR: stateDir,
+            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+          },
+        },
+      );
+      expect(res.exitCode).not.toBe(0);
+      expect(res.stdout.trim()).toBe('');
+      const envelope = JSON.parse(res.stderr);
+      expect(envelope.event).toBe('error');
+      expect(envelope.error.code).toBe('WHISTLE_WEB_UNAVAILABLE');
     } finally {
       await backend.close();
     }
