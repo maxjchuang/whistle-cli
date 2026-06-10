@@ -11,7 +11,14 @@ type StartedCli = {
   child: ChildProcessWithoutNullStreams;
   stdout: () => string;
   stderr: () => string;
-  wait: () => Promise<{ exitCode: number; signal: NodeJS.Signals | null; stdout: string; stderr: string }>;
+  wait: () => Promise<StartedCliResult>;
+};
+
+type StartedCliResult = {
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
 };
 
 function startCli(
@@ -40,15 +47,10 @@ function startCli(
     stderr += chunk;
   });
 
-  const exit = new Promise<{
-    exitCode: number;
-    signal: NodeJS.Signals | null;
-    stdout: string;
-    stderr: string;
-  }>((resolve) => {
-    child.once('exit', (code, signal) => {
+  const close = new Promise<StartedCliResult>((resolve) => {
+    child.once('close', (code, signal) => {
       resolve({
-        exitCode: code ?? 0,
+        exitCode: code,
         signal,
         stdout,
         stderr,
@@ -60,21 +62,78 @@ function startCli(
     child,
     stdout: () => stdout,
     stderr: () => stderr,
-    wait: () => exit,
+    wait: () => close,
   };
+}
+
+function cliOutputDiagnostics(started: StartedCli): string {
+  return `stdout:\n${started.stdout()}\nstderr:\n${started.stderr()}`;
+}
+
+async function waitForCliClose(
+  started: StartedCli,
+  timeoutMs: number,
+  label: string,
+): Promise<StartedCliResult> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(
+        new Error(
+          `${label} did not close within ${timeoutMs}ms\n${cliOutputDiagnostics(started)}`,
+        ),
+      );
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([started.wait(), timedOut]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
+async function cleanupCli(started: StartedCli, timeoutMs = 500): Promise<void> {
+  if (started.child.exitCode !== null || started.child.signalCode !== null) {
+    try {
+      await waitForCliClose(started, timeoutMs, 'CLI cleanup after process exit');
+    } catch {
+      // The process has exited, so there is no child left to terminate.
+    }
+    return;
+  }
+
+  started.child.kill('SIGTERM');
+  try {
+    await waitForCliClose(started, timeoutMs, 'CLI SIGTERM cleanup');
+    return;
+  } catch {
+    // Fall through to SIGKILL below.
+  }
+
+  if (started.child.exitCode === null && started.child.signalCode === null) {
+    started.child.kill('SIGKILL');
+  }
+  try {
+    await waitForCliClose(started, timeoutMs, 'CLI SIGKILL cleanup');
+  } catch {
+    // Best-effort cleanup after escalation.
+  }
 }
 
 async function waitFor(
   predicate: () => boolean,
   timeoutMs = 1000,
   intervalMs = 20,
+  diagnostics?: () => string,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   do {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   } while (Date.now() < deadline);
-  throw new Error('Timed out waiting for condition');
+  throw new Error(
+    `Timed out waiting for condition${diagnostics === undefined ? '' : `\n${diagnostics()}`}`,
+  );
 }
 
 describe('US3 captures (integration)', () => {
@@ -1451,12 +1510,18 @@ describe('US3 captures (integration)', () => {
       },
     );
     try {
-      await waitFor(() => started.stdout().includes('persistent_watch'), 1500);
+      await waitFor(
+        () => started.stdout().includes('persistent_watch'),
+        1500,
+        20,
+        () => cliOutputDiagnostics(started),
+      );
       expect(started.stdout()).not.toContain('old_capture');
 
       started.child.kill('SIGINT');
-      const result = await started.wait();
+      const result = await waitForCliClose(started, 1000, 'captures watch SIGINT shutdown');
       expect(result.exitCode).toBe(0);
+      expect(result.signal).toBeNull();
 
       const lines = result.stdout
         .trim()
@@ -1478,7 +1543,7 @@ describe('US3 captures (integration)', () => {
         },
       });
     } finally {
-      if (started.child.exitCode == null && !started.child.killed) started.child.kill('SIGTERM');
+      await cleanupCli(started);
       await backend.close();
     }
   });
@@ -1486,35 +1551,38 @@ describe('US3 captures (integration)', () => {
   it('captures watch rejects unsupported since values', async () => {
     const stateDir = await makeTempDir('whistle-cli-us3-state-');
     const backend = await startFakeCaptureBackend({ disableCaptureRuntimeRoutes: true });
-    try {
-      const res = await runCli(
-        [
-          '--instance',
-          'dummy',
-          'captures',
-          'watch',
-          '--backend',
-          'whistle-web',
-          '--host',
-          'app.example.com',
-          '--since',
-          '12345',
-          '--format',
-          'ndjson',
-        ],
-        {
-          env: {
-            WHISTLE_CLI_STATE_DIR: stateDir,
-            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
-          },
+    const started = startCli(
+      [
+        '--instance',
+        'dummy',
+        'captures',
+        'watch',
+        '--backend',
+        'whistle-web',
+        '--host',
+        'app.example.com',
+        '--since',
+        '12345',
+        '--format',
+        'ndjson',
+      ],
+      {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
         },
-      );
+      },
+    );
+    try {
+      const res = await waitForCliClose(started, 1500, 'captures watch --since 12345');
       expect(res.exitCode).not.toBe(0);
+      expect(res.signal).toBeNull();
       const envelope = JSON.parse(res.stderr);
       expect(envelope.event).toBe('error');
       expect(envelope.error.code).toBe('UNSUPPORTED_OPERATION');
       expect(envelope.error.message).toContain('Unsupported capture starting point');
     } finally {
+      await cleanupCli(started);
       await backend.close();
     }
   });
@@ -1525,34 +1593,37 @@ describe('US3 captures (integration)', () => {
       disableCaptureRuntimeRoutes: true,
       failGetData: true,
     });
-    try {
-      const res = await runCli(
-        [
-          '--instance',
-          'dummy',
-          'captures',
-          'watch',
-          '--backend',
-          'whistle-web',
-          '--host',
-          'app.example.com',
-          '--watch',
-          '--format',
-          'ndjson',
-        ],
-        {
-          env: {
-            WHISTLE_CLI_STATE_DIR: stateDir,
-            WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
-          },
+    const started = startCli(
+      [
+        '--instance',
+        'dummy',
+        'captures',
+        'watch',
+        '--backend',
+        'whistle-web',
+        '--host',
+        'app.example.com',
+        '--watch',
+        '--format',
+        'ndjson',
+      ],
+      {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
         },
-      );
+      },
+    );
+    try {
+      const res = await waitForCliClose(started, 1500, 'captures watch --watch error handling');
       expect(res.exitCode).not.toBe(0);
+      expect(res.signal).toBeNull();
       expect(res.stdout.trim()).toBe('');
       const envelope = JSON.parse(res.stderr);
       expect(envelope.event).toBe('error');
       expect(envelope.error.code).toBe('WHISTLE_WEB_UNAVAILABLE');
     } finally {
+      await cleanupCli(started);
       await backend.close();
     }
   });
