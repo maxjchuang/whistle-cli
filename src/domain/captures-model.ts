@@ -50,6 +50,11 @@ export interface CaptureAssertRequestOptions extends CaptureSummaryOptions {
   pollIntervalMs?: number;
 }
 
+export interface CaptureWatchRequestSummariesOptions extends CaptureAssertRequestOptions {
+  forever?: boolean;
+  shouldStop?: () => boolean;
+}
+
 export interface CaptureAssertRequestResult {
   matched: boolean;
   classification: CaptureAssertClassification;
