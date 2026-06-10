@@ -747,7 +747,10 @@ export class CapturesService {
     const forever = Boolean(opts?.forever);
     const deadline = forever ? Number.POSITIVE_INFINITY : Date.now() + timeoutMs;
     const shouldStop = opts?.shouldStop ?? (() => false);
-    const seen = new Set((await this.find(query)).items.map((item) => item.capture_id));
+    if (shouldStop()) return;
+    const baseline = await this.find(query);
+    if (shouldStop()) return;
+    const seen = new Set(baseline.items.map((item) => item.capture_id));
 
     do {
       const result = await this.find(query);
