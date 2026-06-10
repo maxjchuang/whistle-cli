@@ -77,6 +77,12 @@ For agent-driven packet capture, prefer scoped watch/assert commands over broad 
 5. On match, immediately report `x_tt_logid`, `request_id`, `capture_id`, method, status, path, injected env headers, and matched rule summary.
 6. On timeout, report that no matching capture was observed and ask the user to retrigger the exact UI action while the listener is active.
 
+For long-running human-facing monitoring, use request-summary watch mode:
+
+- `whistle-cli --format ndjson captures watch --backend whistle-web --host app.example.com --path /api/ --fields capture_id,method,status_code,path,x_tt_logid,request_id,referer --watch`
+
+This is process-local monitoring over Whistle Web's recent capture window. Stop it with Ctrl-C; the command emits a final `event=end` envelope on interruption.
+
 Safety defaults:
 
 - Use `--fields` for capture output unless the user explicitly needs raw packets.
