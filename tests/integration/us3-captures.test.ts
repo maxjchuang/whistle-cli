@@ -1,9 +1,140 @@
 import { describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { runCli } from './us1-bootstrap.fixtures';
 import { makeTempDir } from './us2-rules.fixtures';
 import { startFakeCaptureBackend } from './us3-captures.fixtures';
+
+type StartedCli = {
+  child: ChildProcessWithoutNullStreams;
+  stdout: () => string;
+  stderr: () => string;
+  wait: () => Promise<StartedCliResult>;
+};
+
+type StartedCliResult = {
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+};
+
+function startCli(
+  args: string[],
+  opts?: { env?: Record<string, string | undefined> },
+): StartedCli {
+  const repoRoot = path.resolve(__dirname, '..', '..');
+  const srcEntry = path.join(repoRoot, 'src', 'cli', 'index.ts');
+  const tsxBin = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
+  const child = spawn(process.execPath, [tsxBin, srcEntry, ...args], {
+    env: {
+      ...process.env,
+      ...opts?.env,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.on('data', (chunk: string) => {
+    stderr += chunk;
+  });
+
+  const close = new Promise<StartedCliResult>((resolve) => {
+    child.once('close', (code, signal) => {
+      resolve({
+        exitCode: code,
+        signal,
+        stdout,
+        stderr,
+      });
+    });
+  });
+
+  return {
+    child,
+    stdout: () => stdout,
+    stderr: () => stderr,
+    wait: () => close,
+  };
+}
+
+function cliOutputDiagnostics(started: StartedCli): string {
+  return `stdout:\n${started.stdout()}\nstderr:\n${started.stderr()}`;
+}
+
+async function waitForCliClose(
+  started: StartedCli,
+  timeoutMs: number,
+  label: string,
+): Promise<StartedCliResult> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(
+        new Error(
+          `${label} did not close within ${timeoutMs}ms\n${cliOutputDiagnostics(started)}`,
+        ),
+      );
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([started.wait(), timedOut]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
+async function cleanupCli(started: StartedCli, timeoutMs = 500): Promise<void> {
+  if (started.child.exitCode !== null || started.child.signalCode !== null) {
+    try {
+      await waitForCliClose(started, timeoutMs, 'CLI cleanup after process exit');
+    } catch {
+      // The process has exited, so there is no child left to terminate.
+    }
+    return;
+  }
+
+  started.child.kill('SIGTERM');
+  try {
+    await waitForCliClose(started, timeoutMs, 'CLI SIGTERM cleanup');
+    return;
+  } catch {
+    // Fall through to SIGKILL below.
+  }
+
+  if (started.child.exitCode === null && started.child.signalCode === null) {
+    started.child.kill('SIGKILL');
+  }
+  try {
+    await waitForCliClose(started, timeoutMs, 'CLI SIGKILL cleanup');
+  } catch {
+    // Best-effort cleanup after escalation.
+  }
+}
+
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 1000,
+  intervalMs = 20,
+  diagnostics?: () => string,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  } while (Date.now() < deadline);
+  throw new Error(
+    `Timed out waiting for condition${diagnostics === undefined ? '' : `\n${diagnostics()}`}`,
+  );
+}
 
 describe('US3 captures (integration)', () => {
   it('captures find returns ok envelope (including empty results)', async () => {
@@ -1284,6 +1415,201 @@ describe('US3 captures (integration)', () => {
       expect(JSON.stringify(lines)).not.toContain('secret');
       expect(lines.at(-1).event).toBe('end');
     } finally {
+      await backend.close();
+    }
+  });
+
+  it('captures watch --watch streams request summaries until interrupted', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      nativeCaptureSequence: [
+        {
+          old_capture: {
+            id: 'old_capture',
+            url: 'https://app.example.com/space/api/workspace/chatbot/bot1/skills',
+            req: {
+              method: 'GET',
+              headers: {
+                host: 'app.example.com',
+                'x-tt-logid': 'old-logid',
+              },
+            },
+            res: { statusCode: 200 },
+          },
+        },
+        {
+          old_capture: {
+            id: 'old_capture',
+            url: 'https://app.example.com/space/api/workspace/chatbot/bot1/skills',
+            req: {
+              method: 'GET',
+              headers: {
+                host: 'app.example.com',
+                'x-tt-logid': 'old-logid',
+              },
+            },
+            res: { statusCode: 200 },
+          },
+          persistent_watch: {
+            id: 'persistent_watch',
+            url: 'https://app.example.com/space/api/workspace/chatbot/bot1/skills',
+            req: {
+              method: 'GET',
+              headers: {
+                host: 'app.example.com',
+                'x-tt-logid': 'persistent-logid',
+              },
+            },
+            res: { statusCode: 200 },
+          },
+        },
+      ],
+    });
+    const started = startCli(
+      [
+        '--instance',
+        'dummy',
+        'captures',
+        'watch',
+        '--backend',
+        'whistle-web',
+        '--host',
+        'app.example.com',
+        '--path',
+        '/skills',
+        '--duration',
+        '20ms',
+        '--poll-interval',
+        '5s',
+        '--fields',
+        'capture_id,x_tt_logid',
+        '--watch',
+        '--format',
+        'ndjson',
+      ],
+      {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      },
+    );
+    try {
+      await waitFor(
+        () => started.stdout().includes('persistent_watch'),
+        1500,
+        20,
+        () => cliOutputDiagnostics(started),
+      );
+      expect(started.stdout()).not.toContain('old_capture');
+
+      started.child.kill('SIGINT');
+      const result = await waitForCliClose(started, 1000, 'captures watch SIGINT shutdown');
+      expect(result.exitCode).toBe(0);
+      expect(result.signal).toBeNull();
+
+      const lines = result.stdout
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      expect(lines[0]).toMatchObject({
+        event: 'capture',
+        data: {
+          capture_id: 'persistent_watch',
+          x_tt_logid: 'persistent-logid',
+        },
+      });
+      expect(lines.at(-1)).toMatchObject({
+        event: 'end',
+        data: {
+          ended: true,
+          count: 1,
+          reason: 'interrupted',
+        },
+      });
+    } finally {
+      await cleanupCli(started);
+      await backend.close();
+    }
+  });
+
+  it('captures watch rejects unsupported since values', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({ disableCaptureRuntimeRoutes: true });
+    const started = startCli(
+      [
+        '--instance',
+        'dummy',
+        'captures',
+        'watch',
+        '--backend',
+        'whistle-web',
+        '--host',
+        'app.example.com',
+        '--since',
+        '12345',
+        '--format',
+        'ndjson',
+      ],
+      {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      },
+    );
+    try {
+      const res = await waitForCliClose(started, 1500, 'captures watch --since 12345');
+      expect(res.exitCode).not.toBe(0);
+      expect(res.signal).toBeNull();
+      const envelope = JSON.parse(res.stderr);
+      expect(envelope.event).toBe('error');
+      expect(envelope.error.code).toBe('UNSUPPORTED_OPERATION');
+      expect(envelope.error.message).toContain('Unsupported capture starting point');
+    } finally {
+      await cleanupCli(started);
+      await backend.close();
+    }
+  });
+
+  it('captures watch --watch exits on Whistle Web errors', async () => {
+    const stateDir = await makeTempDir('whistle-cli-us3-state-');
+    const backend = await startFakeCaptureBackend({
+      disableCaptureRuntimeRoutes: true,
+      failGetData: true,
+    });
+    const started = startCli(
+      [
+        '--instance',
+        'dummy',
+        'captures',
+        'watch',
+        '--backend',
+        'whistle-web',
+        '--host',
+        'app.example.com',
+        '--watch',
+        '--format',
+        'ndjson',
+      ],
+      {
+        env: {
+          WHISTLE_CLI_STATE_DIR: stateDir,
+          WHISTLE_CLI_RUNTIME_URL: backend.baseUrl,
+        },
+      },
+    );
+    try {
+      const res = await waitForCliClose(started, 1500, 'captures watch --watch error handling');
+      expect(res.exitCode).not.toBe(0);
+      expect(res.signal).toBeNull();
+      expect(res.stdout.trim()).toBe('');
+      const envelope = JSON.parse(res.stderr);
+      expect(envelope.event).toBe('error');
+      expect(envelope.error.code).toBe('WHISTLE_WEB_UNAVAILABLE');
+    } finally {
+      await cleanupCli(started);
       await backend.close();
     }
   });

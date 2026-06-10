@@ -49,6 +49,16 @@ function splitFields(input: unknown): string[] | undefined {
   return fields.length ? fields : undefined;
 }
 
+function assertWatchSince(since: unknown): void {
+  if (since == null || String(since) === 'now') return;
+  throw new CliError({
+    code: 'UNSUPPORTED_OPERATION',
+    message: 'Unsupported capture starting point',
+    reason: `since=${String(since)}`,
+    suggested_fix: 'Use --since now or omit --since. Historical capture cursors are not supported.',
+  });
+}
+
 function writeJsonFile(file: unknown, data: unknown): string | undefined {
   if (!file) return undefined;
   const filePath = String(file);
@@ -249,8 +259,11 @@ type CaptureWatchOptions = CaptureFindOptions & {
   duration?: string;
   timeout?: string;
   pollInterval?: string;
+  since?: string;
   watch?: boolean;
 };
+
+type WatchStopReason = 'interrupted';
 
 type CaptureExportOptions = CaptureFindOptions & {
   exportFormat?: string;
@@ -707,6 +720,7 @@ export function registerCapturesResource(program: Command): void {
 
         const backend = assertFindBackend(cmdOpts.backend);
         if (!cmdOpts.expectHeader) {
+          assertWatchSince(cmdOpts.since);
           const filters = {
             host: cmdOpts.host ? String(cmdOpts.host) : undefined,
             path: cmdOpts.path ? String(cmdOpts.path) : undefined,
@@ -714,37 +728,64 @@ export function registerCapturesResource(program: Command): void {
             status: cmdOpts.status ? Number(cmdOpts.status) : undefined,
             keyword: cmdOpts.keyword ? String(cmdOpts.keyword) : undefined,
           };
+          const persistent = Boolean(cmdOpts.watch);
+          const abortController = persistent ? new AbortController() : undefined;
           let count = 0;
-          for await (const item of service.watchRequestSummaries(
-            { instance_id: resolved.id, backend, filters, limit: 200 },
-            {
-              timeoutMs: parseDurationMs(cmdOpts.timeout ?? cmdOpts.duration),
-              pollIntervalMs: parseDurationMs(cmdOpts.pollInterval),
-              fields: splitFields(cmdOpts.fields),
-            },
-          )) {
-            count++;
-            process.stdout.write(
-              renderEnvelope(
-                okEnvelope('captures', action, item, { instance: resolved, event: 'capture' }),
-                'ndjson',
-              ),
-            );
+          let stopReason: WatchStopReason | undefined;
+          const stop = (): void => {
+            stopReason = 'interrupted';
+            if (!abortController?.signal.aborted) abortController?.abort();
+          };
+          const onSigint = (): void => stop();
+          const onSigterm = (): void => stop();
+
+          if (persistent) {
+            process.on('SIGINT', onSigint);
+            process.on('SIGTERM', onSigterm);
           }
+
+          try {
+            for await (const item of service.watchRequestSummaries(
+              { instance_id: resolved.id, backend, filters, limit: 200 },
+              {
+                timeoutMs: persistent
+                  ? undefined
+                  : parseDurationMs(cmdOpts.timeout ?? cmdOpts.duration),
+                pollIntervalMs: parseDurationMs(cmdOpts.pollInterval),
+                fields: splitFields(cmdOpts.fields),
+                forever: persistent,
+                shouldStop: persistent ? () => stopReason != null : undefined,
+                stopSignal: persistent ? abortController?.signal : undefined,
+              },
+            )) {
+              count++;
+              process.stdout.write(
+                renderEnvelope(
+                  okEnvelope('captures', action, item, { instance: resolved, event: 'capture' }),
+                  'ndjson',
+                ),
+              );
+            }
+          } finally {
+            if (persistent) {
+              process.off('SIGINT', onSigint);
+              process.off('SIGTERM', onSigterm);
+            }
+          }
+
+          const data = stopReason
+            ? { ended: true, count, reason: stopReason }
+            : { ended: true, count };
           process.stdout.write(
             renderEnvelope(
-              okEnvelope(
-                'captures',
-                action,
-                { ended: true, count },
-                { instance: resolved, event: 'end' },
-              ),
+              okEnvelope('captures', action, data, { instance: resolved, event: 'end' }),
               'ndjson',
             ),
           );
           return;
         }
 
+        assertWatchSince(cmdOpts.since);
         const expected = splitHeaderPair(String(cmdOpts.expectHeader));
         const seenCaptureIds = new Set<string>();
         let finalClassification = 'OK';
@@ -784,7 +825,7 @@ export function registerCapturesResource(program: Command): void {
         process.stderr.write(
           renderEnvelope(
             errorEnvelope('captures', action, err, { instance: resolved, event: 'error' }),
-            'json',
+            'ndjson',
           ),
         );
         process.exitCode = 1;

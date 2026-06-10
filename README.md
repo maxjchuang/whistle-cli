@@ -247,6 +247,19 @@ whistle-cli --format json captures export \
 
 `assert-request` remains redacted by default for safe agent-facing reporting. Explicit retrieval commands such as `get`, `export`, and `get-header` return captured request header values requested by the user, so avoid logging their output when headers contain credentials.
 
+For continuous human-facing monitoring, use `captures watch --watch` with NDJSON output:
+
+```bash
+whistle-cli --format ndjson captures watch \
+  --backend whistle-web \
+  --host app.example.com \
+  --path /api/ \
+  --fields capture_id,method,status_code,path,x_tt_logid,request_id,referer \
+  --watch
+```
+
+`--watch` keeps the process running until Ctrl-C or SIGTERM. It performs process-local in-memory de-duplication from the startup baseline and does not persist history across restarts. It still reads Whistle Web's recent capture window, so high-volume traffic can rotate old records out before they are observed.
+
 For a single exact header, `get-header` remains available. Add `--redact`, `--save-env`, `--save-json`, or `--save-value` when the value should not appear in stdout.
 
 If direct Whistle Web API fallback is unavoidable, use `dumpCount` to widen the returned session window, for example: `/cgi-bin/get-data?startTime=0&dumpCount=1000`.

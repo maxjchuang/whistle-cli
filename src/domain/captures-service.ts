@@ -14,6 +14,7 @@ import type {
   CaptureRecord,
   CaptureSummary,
   CaptureSummaryOptions,
+  CaptureWatchRequestSummariesOptions,
   HeaderAssertionExample,
   HeaderAssertionOptions,
   HeaderAssertionResult,
@@ -327,6 +328,21 @@ function sourceCaptureIdMatches(raw: unknown, fallbackId: string, captureId: str
     prop(r, 'sessionId'),
   ];
   return candidates.some((candidate) => String(candidate ?? '') === captureId);
+}
+
+function delayMs(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timeout = setTimeout(done, ms);
+
+    function done(): void {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    }
+
+    signal?.addEventListener('abort', done, { once: true });
+  });
 }
 
 export function summarizeHeaderAssertion(
@@ -739,24 +755,32 @@ export class CapturesService {
 
   async *watchRequestSummaries(
     query: CaptureQuery,
-    opts?: CaptureAssertRequestOptions,
+    opts?: CaptureWatchRequestSummariesOptions,
   ): AsyncGenerator<CaptureSummary, void, unknown> {
     const timeoutMs = opts?.timeoutMs ?? 60_000;
     const pollIntervalMs = Math.max(100, opts?.pollIntervalMs ?? 1000);
-    const deadline = Date.now() + timeoutMs;
-    const seen = new Set((await this.find(query)).items.map((item) => item.capture_id));
+    const forever = Boolean(opts?.forever);
+    const deadline = forever ? Number.POSITIVE_INFINITY : Date.now() + timeoutMs;
+    const shouldStop = opts?.shouldStop ?? (() => false);
+    if (shouldStop()) return;
+    const baseline = await this.find(query);
+    if (shouldStop()) return;
+    const seen = new Set(baseline.items.map((item) => item.capture_id));
 
     do {
       const result = await this.find(query);
       for (const item of result.items) {
+        if (shouldStop()) return;
         if (seen.has(item.capture_id)) continue;
         seen.add(item.capture_id);
         yield this.summarizeRecord(item, opts);
       }
-      const remainingMs = deadline - Date.now();
-      if (remainingMs > 0)
-        await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)));
-    } while (Date.now() < deadline);
+      if (shouldStop()) return;
+      const remainingMs = forever ? pollIntervalMs : deadline - Date.now();
+      if (remainingMs > 0) {
+        await delayMs(Math.min(pollIntervalMs, remainingMs), opts?.stopSignal);
+      }
+    } while (!shouldStop() && (forever || Date.now() < deadline));
   }
 
   async get(
